@@ -55,7 +55,9 @@ Paste the block below verbatim, from the `#` heading to the end of §5.
 # Gated Harness: compliance is the floor, not the score
 
 - Repo: https://github.com/hedephilip/ple-harness
-- Commit SHA: `188fc1f17bbd4da32aecfaeb7a0e82fc04161d60`
+- Commit SHA: `188fc1f17bbd4da32aecfaeb7a0e82fc04161d60` — the tree in which
+  the harness code was last changed. Commits after it touch documentation
+  only: `git diff --stat 188fc1f HEAD -- '*.py'` is empty.
 - Primary model_api: google-cloud/claude-opus-5-5
 - Other models tested: none yet — the second model run is not done, so §3 reports
   design intent rather than a measured comparison
