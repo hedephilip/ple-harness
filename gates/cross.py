@@ -83,6 +83,74 @@ def claims_of(ctx: dict) -> dict[str, dict[str, Any]]:
     return found
 
 
+# --- applicability --------------------------------------------------------
+# A gate that cannot judge a task must decline it, not fail it.
+#
+# Observed false positive, from kit check's smoke stage: a task whose only
+# deliverable was a file containing "HELLO" was failed twice for carrying no
+# PLE-CLAIMS block and no revision table. Two model rounds were then spent
+# instructing the agent to add artefacts nobody had asked for. The measured
+# fix is that a gate whose precondition is absent contributes nothing.
+
+_TEXT_SUFFIXES = (".md", ".txt", ".csv", ".json", ".py", ".html", ".xml",
+                  ".yaml", ".yml")
+
+# Disciplines whose gates are fed by the claims block. For these the block is
+# the input channel, so its absence is a genuine failure. For any other task
+# the layer has no arithmetic to recompute and must not demand one.
+_CLAIMS_DISCIPLINES = ("structural", "civil", "electrical", "mechanical")
+
+
+def text_deliverables(ctx: dict) -> list[str]:
+    """Declared deliverables the gate layer can actually parse as text."""
+    return [path for path in (ctx.get("deliverables") or [])
+            if str(path).lower().endswith(_TEXT_SUFFIXES)]
+
+
+def _texts(ctx: dict) -> list[str]:
+    out: list[str] = []
+    for path, raw in (ctx.get("files") or {}).items():
+        if not str(path).lower().endswith(_TEXT_SUFFIXES):
+            continue
+        out.append(raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw))
+    return out
+
+
+def _instruction(ctx: dict) -> str:
+    return str(ctx.get("instruction") or "").lower()
+
+
+def applies_claims(ctx: dict) -> bool:
+    """Only engineering tasks, and only where a claims block can live."""
+    return (ctx.get("task_type") in _CLAIMS_DISCIPLINES
+            and bool(text_deliverables(ctx)))
+
+
+def applies_units(ctx: dict) -> bool:
+    return bool(claims_of(ctx))
+
+
+def applies_numeric(ctx: dict) -> bool:
+    return len(claims_of(ctx)) >= 2
+
+
+def applies_requirements(ctx: dict) -> bool:
+    text = _instruction(ctx)
+    return any(word in text for word in
+               ("requirement", "clause", "code", "compliance", "shall", "standard"))
+
+
+def applies_revisions(ctx: dict) -> bool:
+    rows = (ctx.get("data") or {}).get("revisions") or []
+    if rows:
+        return True
+    text = " ".join(_texts(ctx)) + " " + _instruction(ctx)
+    text = text.lower()
+    ranks = sum(1 for word in ("addendum", "rfi", "ifc", "preliminary",
+                               "superseded", "revision") if word in text)
+    return ranks >= 2
+
+
 @GATES.register_cross
 def contract_deliverables(ctx: dict) -> list[GateResult]:
     """Every declared path exists and is non-empty.
@@ -97,9 +165,12 @@ def contract_deliverables(ctx: dict) -> list[GateResult]:
     return require_artifacts(ctx, declared)
 
 
-@GATES.register_cross
+@GATES.register_cross(applies=applies_claims)
 def claims_present(ctx: dict) -> list[GateResult]:
-    deliverables = ctx.get("deliverables", [])
+    # Only text deliverables can carry a claims block. Demanding one from a
+    # .docx, .xlsx, .pdf or .dxf would fail every multi-format deliverable the
+    # benchmark actually asks for.
+    deliverables = text_deliverables(ctx)
     found = claims_of(ctx)
     results: list[GateResult] = []
     for path in deliverables:
@@ -113,7 +184,7 @@ def claims_present(ctx: dict) -> list[GateResult]:
     return results
 
 
-@GATES.register_cross
+@GATES.register_cross(applies=applies_units)
 def unit_declarations(ctx: dict) -> list[GateResult]:
     results: list[GateResult] = []
     for path, claims in claims_of(ctx).items():
@@ -136,7 +207,7 @@ def unit_declarations(ctx: dict) -> list[GateResult]:
     return results
 
 
-@GATES.register_cross
+@GATES.register_cross(applies=applies_numeric)
 def numeric_agreement(ctx: dict, rel_tol: float = 1e-6) -> list[GateResult]:
     """The same quantity, named the same way in two deliverables, must match."""
     seen: dict[str, tuple[str, float]] = {}
@@ -162,7 +233,7 @@ def numeric_agreement(ctx: dict, rel_tol: float = 1e-6) -> list[GateResult]:
     return conflicts
 
 
-@GATES.register_cross
+@GATES.register_cross(applies=applies_requirements)
 def requirements_listed(ctx: dict) -> list[GateResult]:
     """Corpus navigation is scored.
 
@@ -198,7 +269,7 @@ def requirements_listed(ctx: dict) -> list[GateResult]:
     return results
 
 
-@GATES.register_cross
+@GATES.register_cross(applies=applies_revisions)
 def revision_authority(ctx: dict) -> list[GateResult]:
     """A superseded document must never supply a governing value.
 

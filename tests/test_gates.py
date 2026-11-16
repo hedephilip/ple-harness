@@ -31,12 +31,14 @@ CLAIMS_OK = {
 
 
 def ctx_for(task_type: str, data: dict | None = None, files: dict | None = None,
-            deliverables: list[str] | None = None, revisions: list | None = None) -> dict:
+            deliverables: list[str] | None = None, revisions: list | None = None,
+            instruction: str = "") -> dict:
     claims = "\n<!-- PLE-CLAIMS\n" + json.dumps(CLAIMS_OK) + "\n-->\n"
     payload = (files if files is not None
                else {"memo.md": claims.encode()})
     return {
         "task_type": task_type,
+        "instruction": instruction,
         "data": {**(data or {}), "revisions": revisions if revisions is not None else [
             {"doc_id": "S-201", "rank": "IFC", "revision": 1, "value": 11.0},
         ]},
@@ -233,14 +235,18 @@ class TestCrossCutting(unittest.TestCase):
         self.assertEqual(by_id(res, "revision_authority")[0].cause_code, "REVISION_CONFLICT")
 
     def test_requirements_listed_passes(self):
-        res = GATES.run("structural", ctx_for("structural", {"structural": TestStructural.BASE}))
+        res = GATES.run("structural", ctx_for(
+            "structural", {"structural": TestStructural.BASE},
+            instruction="List the code clauses you applied and their values."))
         self.assertTrue(by_id(res, "requirements_listed")[0].passed)
 
     def test_requirements_missing_fails(self):
         claims = {"units": {}, "flexure": {"Fy_ksi": 50}}
         blob = ("<!-- PLE-CLAIMS\n" + json.dumps(claims) + "\n-->").encode()
-        res = GATES.run("structural", ctx_for("structural", {"structural": TestStructural.BASE},
-                                              files={"memo.md": blob}))
+        res = GATES.run("structural", ctx_for(
+            "structural", {"structural": TestStructural.BASE},
+            files={"memo.md": blob},
+            instruction="Size the beam to the applicable code clauses."))
         self.assertEqual(by_id(res, "requirements_listed")[0].cause_code,
                          "REQUIREMENTS_MISSING")
 
@@ -249,17 +255,36 @@ class TestCrossCutting(unittest.TestCase):
                   "requirements": [{"clause": "AISC 360-16 F2"},
                                    {"value": "L/360"}]}
         blob = ("<!-- PLE-CLAIMS\n" + json.dumps(claims) + "\n-->").encode()
-        res = GATES.run("structural", ctx_for("structural", {"structural": TestStructural.BASE},
-                                              files={"memo.md": blob}))
+        res = GATES.run("structural", ctx_for(
+            "structural", {"structural": TestStructural.BASE},
+            files={"memo.md": blob},
+            instruction="Size the beam to the applicable code clauses."))
         codes = {r.cause_code for r in by_id(res, "requirements_listed")}
         self.assertIn("REQUIREMENT_NO_VALUE", codes)
         self.assertIn("REQUIREMENT_NO_CLAUSE", codes)
 
     def test_revision_table_missing_is_not_a_pass(self):
-        res = GATES.run("structural", ctx_for("structural", {"structural": TestStructural.BASE},
-                                              revisions=[]))
+        # The task says documents conflict, so a missing table is a real gap.
+        res = GATES.run("structural", ctx_for(
+            "structural", {"structural": TestStructural.BASE}, revisions=[],
+            instruction="An Addendum supersedes the superseded IFC revision; "
+                        "use the governing document."))
         self.assertEqual(by_id(res, "revision_authority")[0].cause_code,
                          "REVISION_TABLE_MISSING")
+
+    def test_gates_decline_a_task_they_cannot_judge(self):
+        """Regression, from kit check's smoke stage.
+
+        A deliverable that carries no numbers, cites no code and ranks no
+        revisions must not be failed for lacking a claims block or a revision
+        table. Before this, the repair loop spent its whole budget asking for
+        artefacts the task never requested.
+        """
+        res = GATES.run("unknown", ctx_for(
+            "unknown", files={"hello.txt": b"HELLO\n"},
+            deliverables=["hello.txt"], revisions=[]))
+        self.assertEqual([r.gate_id for r in res], ["contract_deliverables"])
+        self.assertTrue(all(r.passed for r in res))
 
 
 class TestStrictSemantics(unittest.TestCase):

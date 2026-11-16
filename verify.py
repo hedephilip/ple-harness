@@ -106,16 +106,27 @@ class GateRegistry:
             return fn
         return deco
 
-    def register_cross(self, fn: Callable) -> Callable:
-        self._cross.append(fn)
-        return fn
+    def register_cross(self, fn: Callable | None = None, *,
+                       applies: Callable[[dict], bool] | None = None):
+        """`applies(ctx)` lets a gate decline a task it has no business judging.
 
-    def gates_for(self, task_type: str) -> list[Callable]:
-        return list(self._cross) + list(self._by_type.get(task_type, []))
+        A gate that cannot evaluate a task must stand aside, not fail it. A
+        false positive here is expensive: the repair loop spends model rounds
+        forcing the agent to add artefacts the task never asked for.
+        """
+        def deco(target: Callable) -> Callable:
+            self._cross.append((target, applies))
+            return target
+        return deco(fn) if fn is not None else deco
+
+    def gates_for(self, task_type: str, ctx: dict | None = None) -> list[Callable]:
+        chosen = [fn for fn, applies in self._cross
+                  if applies is None or ctx is None or applies(ctx)]
+        return chosen + list(self._by_type.get(task_type, []))
 
     def run(self, task_type: str, ctx: dict) -> list[GateResult]:
         results: list[GateResult] = []
-        for fn in self.gates_for(task_type):
+        for fn in self.gates_for(task_type, ctx):
             name = getattr(fn, "__name__", "unnamed_gate")
             try:
                 out = fn(ctx)

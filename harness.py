@@ -117,7 +117,7 @@ class GatedHarness:
         return [path for path in candidates if path.lower().endswith(CANDIDATE_SUFFIXES)][:10]
 
     async def _collect(self, channel: TaskChannel, deliverables: list[str],
-                       discipline: str) -> dict[str, Any]:
+                       discipline: str, instruction: str = '') -> dict[str, Any]:
         """Re-read the artifact from disk. The model's claims are not evidence."""
         files: dict[str, bytes] = {}
         for path in deliverables:
@@ -129,6 +129,7 @@ class GatedHarness:
                 continue
         ctx: dict[str, Any] = {
             "task_type": discipline,
+            "instruction": instruction,
             "deliverables": deliverables,
             "files": files,
             "data": {},
@@ -215,6 +216,7 @@ class GatedHarness:
 
         rounds_used = 0
         failures: list[GateResult] = []
+        no_gate = False
         pending_prev: list[GateResult] = []
         deliverables: list[str] = list(deliverables_of(task))
         artifact_path = deliverables[0] if deliverables else ""
@@ -236,7 +238,8 @@ class GatedHarness:
                     deliverables = discovered
                     artifact_path = deliverables[0]
 
-                ctx = await self._collect(channel, deliverables, discipline)
+                ctx = await self._collect(channel, deliverables, discipline,
+                                          task.instruction)
                 gate_started = time.time()
                 results = GATES.run(discipline, ctx)
                 self.telemetry.log_gates(task_id, discipline, round_index, results,
@@ -249,6 +252,12 @@ class GatedHarness:
                         self.playbook.admit(previous, artifact_path,
                                             recovered=bool(current and current.passed))
                     pending_prev = []
+
+                if not results:
+                    # Every gate declined this task: the gate layer has no
+                    # opinion, which is a coverage gap, not a verdict.
+                    no_gate = True
+                    break
 
                 if GATES.all_hard_pass(results):
                     failures = []
@@ -287,6 +296,10 @@ class GatedHarness:
 
         if passed:
             verdict = f"[gated] all hard gates passed in {rounds_used} round(s)."
+        elif no_gate:
+            verdict = (f"[gated] no gate applies to discipline {discipline!r}: "
+                       "the deliverable was not verified. This is a coverage "
+                       "gap, not a failure.")
         elif failures:
             detail = "; ".join(f"{r.gate_id}:{r.cause_code}" for r in failures)
             verdict = (f"[gated] {len(failures)} hard gate(s) unresolved after "
