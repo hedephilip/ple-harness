@@ -1,0 +1,18 @@
+# The competition kit warns when scripts run by `install` and `serve` have CRLF
+# line endings, and artifacts/ must be stored byte-for-byte. Windows checkouts
+# default to autocrlf, which would rewrite every .py file on clone.
+#
+# Force LF everywhere, in the repository, not in each developer's config.
+* text=auto eol=lf
+
+*.py    text eol=lf
+*.md    text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.txt   text eol=lf
+*.json  text eol=lf
+
+# Binary fixtures must never be normalised.
+*.png   binary
+*.pdf   binary
+*.apk   binary
