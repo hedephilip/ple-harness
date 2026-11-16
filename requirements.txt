@@ -10,3 +10,6 @@
 # or OCC would consume most of the cap for a capability the task container
 # already has.
 websockets>=12,<16
+
+# Development only — the end-to-end protocol test spawns serve.py locally.
+# Not needed for the harness to run in the evaluator.

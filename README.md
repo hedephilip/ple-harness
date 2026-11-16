@@ -21,6 +21,7 @@ This harness therefore puts the check outside the decoder.
 | Repair loop, playbook admission, telemetry | **Tested.** 5 loop tests with a scripted client |
 | `submission.yaml`, repo layout, strict-pass semantics | Matches the published competition contract |
 | WebSocket protocol (`protocol.py`) | **Verified** against `docs/protocol.md` v1 in `google-research/ple` — frame shapes, `cancel`, `usage`, size and concurrency limits |
+| End-to-end run | **Verified.** `python tests/e2e_local.py` spawns `serve.py`, drives it over a real WebSocket with a fake evaluator and a scripted model, and observes gate reject → repair → pass → `done` |
 | `artifacts/` | **Not generated.** Requires `uv run python eval/run.py` with the competition repo and a model endpoint |
 
 Nothing above is claimed beyond what was actually run.
@@ -82,7 +83,8 @@ governing value.
 ## Running
 
 ```bash
-python -m unittest discover -s tests -v      # 35 tests, no network, no deps
+python -m unittest discover -s tests -v      # 36 tests, no network, no deps
+python tests/e2e_local.py                    # spawns serve.py, needs websockets only
 PORT=8080 MODEL_API=google-cloud/glm-5.2 python serve.py
 ```
 
@@ -112,7 +114,7 @@ than a claim the numbers do not support.
 
 ## Known gaps
 
-- `kit check` has not run: no Docker on this machine. The manifest was validated against the rules declared in `kit/spec.py` by inspection, not by the official validator.
+- `kit check` has not run: no Docker on this machine. The manifest was validated against the rules declared in `kit/spec.py` by inspection, not by the official validator. The end-to-end test covers the same path minus the container build.
 - Deliverable paths are parsed from `instruction` text, because the protocol carries none. Heuristic — validate on the dev set before trusting the contract gate.
 - Gates cover the four disciplines' core checks, not every clause in every code.
 - `structural` is 6 of 56 hidden tasks; `mechanical` (23) and `electrical` (18)
@@ -155,4 +157,5 @@ winning Submission*, with the resource requirements described.
 Environment variables consumed: `PORT`, `MODEL_API`, `MODEL_NAME`,
 `MODEL_BASE_URL`, `MODEL_API_KEY`, plus `MAX_FIX_ROUNDS`, `PLAYBOOK_PATH`,
 `TELEMETRY_DIR`, `PLE_GATE_MODE`.
+
 
