@@ -227,8 +227,15 @@ class TaskChannel:
 # should be validated on the dev set before it is trusted.
 # --------------------------------------------------------------------------
 
+# Deliverable extensions seen in eval/dev_set.yaml and docs/artifacts.md:
+# md/txt/csv/json/yaml reports, xlsx schedules, docx memos, pdf sheets, dxf/ifc
+# models, and the two the first version missed: `submission.zip` packages and
+# `solution.py` scripts. A directory deliverable is written with a trailing "/".
+_DELIVERABLE_EXT = (r"md|txt|csv|json|ya?ml|xlsx|docx|pptx|pdf|dxf|dwg|ifc"
+                    r"|zip|py|html?|xml")
 _PATH_RE = re.compile(
-    r"(?:/[\w.\-/]+|[\w.\-]+)\.(?:md|txt|csv|json|ya?ml|xlsx|docx|pptx|pdf|dxf|dwg|ifc)\b",
+    r"/[^\s`'\"]*(?:\.(?:" + _DELIVERABLE_EXT + r")\b|/)"
+    r"|[\w.\-]+\.(?:" + _DELIVERABLE_EXT + r")\b",
     re.IGNORECASE,
 )
 
@@ -236,9 +243,17 @@ _DISCIPLINES = ("structural", "civil", "electrical", "mechanical")
 
 
 def deliverables_of(task: Task) -> list[str]:
+    """Paths the prompt asks for.
+
+    Absolute paths stay absolute. The previous version ran `.strip("./")`, which
+    ate the leading slash, so `/filesystem/.../submission.zip` was read as a path
+    relative to the workdir and never resolved.
+    """
     seen: list[str] = []
     for match in _PATH_RE.finditer(task.instruction):
-        path = match.group(0).strip("./")
+        path = match.group(0).rstrip(",.;:)")
+        if path.startswith("./"):
+            path = path[2:]
         if path and path not in seen:
             seen.append(path)
     return seen

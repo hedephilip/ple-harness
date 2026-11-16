@@ -172,7 +172,12 @@ def artifact_text(ctx: dict, path: str) -> str | None:
 def require_artifacts(ctx: dict, paths: Iterable[str]) -> list[GateResult]:
     """The deliverable contract: every declared path exists and is non-empty."""
     results = []
+    present = ctx.get("present") or set()
     for path in paths:
+        if path in present:
+            # A folder or zip deliverable has no single byte string; _collect
+            # recorded it as present when at least one file was readable.
+            continue
         raw = ctx.get("files", {}).get(path)
         if raw is None:
             results.append(fail("contract_deliverables", "MISSING_DELIVERABLE",

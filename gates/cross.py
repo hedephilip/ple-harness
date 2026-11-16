@@ -26,7 +26,9 @@ import json
 import re
 from typing import Any
 
-from verify import GATES, GateResult, fail, ok, require_artifacts
+from extract import text_of
+from verify import (GATES, GateResult, fail, ok,
+                    require_artifacts)
 
 CLAIMS_RE = re.compile(r"<!--\s*PLE-CLAIMS\s*(\{.*?\})\s*-->", re.S)
 
@@ -70,13 +72,28 @@ def flatten(node: Any, prefix: str = "") -> dict[str, Any]:
     return out
 
 
+def texts_of(ctx: dict) -> dict[str, str]:
+    """Readable text per artifact.
+
+    `_collect` fills ctx['texts'] after opening folders, zip packages and OOXML
+    documents. Callers that pass raw `files` only (tests, older paths) fall back
+    to extracting here rather than silently judging nothing.
+    """
+    texts = ctx.get("texts")
+    if isinstance(texts, dict) and texts:
+        return texts
+    out: dict[str, str] = {}
+    for path, raw in (ctx.get("files") or {}).items():
+        value = text_of(path, raw)
+        if value:
+            out[path] = value
+    return out
+
+
 def claims_of(ctx: dict) -> dict[str, dict[str, Any]]:
-    """Per-deliverable claims, keyed by artifact path."""
+    """Per-artifact claims, keyed by artifact path (zip members included)."""
     found: dict[str, dict[str, Any]] = {}
-    for path, raw in ctx.get("files", {}).items():
-        if not path.endswith((".md", ".txt")):
-            continue
-        text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
+    for path, text in texts_of(ctx).items():
         claims = extract_claims(text)
         if claims:
             found[path] = claims
@@ -102,18 +119,12 @@ _CLAIMS_DISCIPLINES = ("structural", "civil", "electrical", "mechanical")
 
 
 def text_deliverables(ctx: dict) -> list[str]:
-    """Declared deliverables the gate layer can actually parse as text."""
-    return [path for path in (ctx.get("deliverables") or [])
-            if str(path).lower().endswith(_TEXT_SUFFIXES)]
+    """Artifacts whose text the gate layer can actually read."""
+    return list(texts_of(ctx))
 
 
 def _texts(ctx: dict) -> list[str]:
-    out: list[str] = []
-    for path, raw in (ctx.get("files") or {}).items():
-        if not str(path).lower().endswith(_TEXT_SUFFIXES):
-            continue
-        out.append(raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw))
-    return out
+    return list(texts_of(ctx).values())
 
 
 def _instruction(ctx: dict) -> str:
@@ -121,9 +132,9 @@ def _instruction(ctx: dict) -> str:
 
 
 def applies_claims(ctx: dict) -> bool:
-    """Only engineering tasks, and only where a claims block can live."""
+    """Only engineering tasks, and only where readable text exists."""
     return (ctx.get("task_type") in _CLAIMS_DISCIPLINES
-            and bool(text_deliverables(ctx)))
+            and bool(texts_of(ctx)))
 
 
 def applies_units(ctx: dict) -> bool:
@@ -167,21 +178,18 @@ def contract_deliverables(ctx: dict) -> list[GateResult]:
 
 @GATES.register_cross(applies=applies_claims)
 def claims_present(ctx: dict) -> list[GateResult]:
-    # Only text deliverables can carry a claims block. Demanding one from a
-    # .docx, .xlsx, .pdf or .dxf would fail every multi-format deliverable the
-    # benchmark actually asks for.
-    deliverables = text_deliverables(ctx)
+    # One claims block anywhere is enough: a deliverable package legitimately
+    # holds many files, and demanding a block in each would fail every package.
+    # The gate only needs somewhere to recompute from.
     found = claims_of(ctx)
-    results: list[GateResult] = []
-    for path in deliverables:
-        if path not in found:
-            results.append(fail(
-                "claims_present", "NO_CLAIMS_BLOCK",
-                f"{path} has no PLE-CLAIMS block; the gate layer has nothing to recompute",
-            ))
-    if not results:
-        results.append(ok("claims_present", f"{len(found)} claims block(s) parsed"))
-    return results
+    readable = list(texts_of(ctx))
+    if found:
+        return [ok("claims_present", f"{len(found)} claims block(s) parsed")]
+    return [fail(
+        "claims_present", "NO_CLAIMS_BLOCK",
+        f"none of {len(readable)} readable artifact(s) carries a PLE-CLAIMS "
+        f"block; looked at {readable[:3]}",
+    )]
 
 
 @GATES.register_cross(applies=applies_units)

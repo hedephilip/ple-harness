@@ -55,7 +55,36 @@ worse than none.
 
 There is a test for each row in `tests/test_gates.py::TestStrictSemantics`.
 
-## 4. Adding a gate
+## 4. Deliverables must be acquired before they can be judged
+
+A gate can only judge what `_collect` managed to read. Measured against the
+public dev set (`eval/dev_set.yaml`): 14 tasks deliver a folder, 12 a
+`submission.zip`, 2 a `.py` and 1 an `.ifc`. A gate layer that assumes "one
+`.md` file in the workdir" reads almost nothing and declines every check.
+
+The acquisition contract, in order:
+
+1. **Parse the prompt for exact paths** (`protocol.deliverables_of`). Paths stay
+   absolute: `/filesystem/.../submission.zip` is not a path relative to `/app`.
+   Extensions include `zip`, `py`, `ifc`, `dxf`, `dwg`; a folder is a path with
+   a trailing `/`.
+2. **Discover what changed on disk.** `touch /tmp/.ple_start` at task start, then
+   `find /app /filesystem -type f -newer /tmp/.ple_start`. Discovery must leave
+   the workdir; dev-set deliverables live under `/filesystem` too.
+3. **Expand folders and packages.** `read_file` refuses directories, so a folder
+   deliverable is enumerated with `find <dir> -type f` and its children read
+   individually. A `.zip` is opened in-process (`extract.archive_members`) and
+   its text members are exposed as `<zip>!<member>`.
+4. **Extract text from the format, not the extension.** `.docx`, `.xlsx` and
+   `.pptx` are zip archives of XML and are read with the standard library.
+   Binary formats that hide their text (`.pdf`, `.ifc`, `.dxf`) yield no text;
+   gates must decline them rather than fail them.
+
+`ctx` therefore carries `texts` (path → extracted text), `present` (paths that
+exist and are non-empty, including folders and zip packages) and `files` (raw
+bytes). Gates read `texts` and `present`; nothing re-filters by filename.
+
+## 5. Adding a gate
 
 1. Add the function to the right module in `gates/`, decorated with
    `@GATES.register("<discipline>")` or `@GATES.register_cross`.
@@ -66,7 +95,7 @@ There is a test for each row in `tests/test_gates.py::TestStrictSemantics`.
    gate at all.
 4. Run `python -m unittest discover -s tests`.
 
-## 5. What gates must not do
+## 6. What gates must not do
 
 - Must not read the model's message history or its self-reported results.
 - Must not accept a capacity the model computed; recompute it from inputs.

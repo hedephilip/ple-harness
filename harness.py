@@ -6,9 +6,11 @@ failure rather than papered over.
 """
 from __future__ import annotations
 
+import shlex
 import time
 from typing import Any
 
+from extract import archive_members, text_of
 from gates import assert_registered
 from gates.cross import claims_of
 from llm import Client, Completion
@@ -19,6 +21,11 @@ from telemetry import Telemetry
 from verify import GATES, GateResult
 
 MAX_STEPS_PER_ROUND = 40
+# Delivered artifacts are folders and zip packages, not single files: in
+# eval/dev_set.yaml 14 dev tasks deliver a folder and 12 a submission.zip, so
+# discovery and collection have to walk into both.
+MAX_DELIVERABLES = 40
+MAX_FILES_PER_DIR = 20
 
 SYSTEM_PROMPT = """You are a licensed-review-grade physical engineering agent.
 
@@ -103,35 +110,99 @@ class GatedHarness:
 
     # -- context ----------------------------------------------------------
     async def _discover(self, channel: TaskChannel, task: Task) -> list[str]:
-        """Deliverable paths. The protocol carries none, so this is a heuristic."""
-        declared = deliverables_of(task)
-        if declared:
-            return declared
+        """Deliverable paths: what the prompt named, plus what changed on disk.
+
+        The first version returned early on declared paths, and otherwise ran
+        `find . -maxdepth 3` from the workdir. Anything under /filesystem was
+        invisible, which is where dev-set tasks deliver their submission.zip.
+        """
+        found: list[str] = list(deliverables_of(task))
         try:
             listing = await channel.exec(
-                "find . -maxdepth 3 -type f -printf '%p\\n' 2>/dev/null | head -200")
-            candidates = [line.strip().lstrip("./")
-                          for line in listing.output.splitlines() if line.strip()]
-        except (TaskCancelled, Exception):
-            return []
-        return [path for path in candidates if path.lower().endswith(CANDIDATE_SUFFIXES)][:10]
+                "find /app /filesystem -type f -newer /tmp/.ple_start "
+                "2>/dev/null | grep -v -e '/\\.git/' -e '/\\.cache/' "
+                "-e '/node_modules/' | head -400")
+            for line in listing.output.splitlines():
+                path = line.strip()
+                if path and path not in found:
+                    found.append(path)
+        except TaskCancelled:
+            raise
+        except Exception:
+            pass
+        return found[:MAX_DELIVERABLES]
+
+    async def _ingest_file(self, channel: TaskChannel, path: str, present: set[str],
+                           files: dict[str, bytes], texts: dict[str, str]) -> None:
+        try:
+            raw = await channel.read_file(path)
+        except TaskCancelled:
+            raise
+        except Exception:
+            return
+        if raw is None:
+            return
+        present.add(path)
+        files[path] = raw
+        if path.lower().endswith(".zip"):
+            for member, text in archive_members(path, raw):
+                texts[f"{path}!{member}"] = text
+            return
+        text = text_of(path, raw)
+        if text:
+            texts[path] = text
+
+    async def _ingest(self, channel: TaskChannel, path: str, present: set[str],
+                      files: dict[str, bytes], texts: dict[str, str]) -> None:
+        """One declared or discovered path: file, zip package, or folder."""
+        try:
+            raw = await channel.read_file(path)
+        except TaskCancelled:
+            raise
+        except Exception:
+            raw = None
+        if raw is not None:
+            present.add(path)
+            files[path] = raw
+            if path.lower().endswith(".zip"):
+                for member, text in archive_members(path, raw):
+                    texts[f"{path}!{member}"] = text
+                return
+            text = text_of(path, raw)
+            if text:
+                texts[path] = text
+            return
+        # Not a regular file: read_file refuses directories, so a deliverable
+        # written as "/app/files/" is enumerated here instead.
+        try:
+            listing = await channel.exec(
+                f"find {shlex.quote(path)} -type f 2>/dev/null "
+                f"| head -{MAX_FILES_PER_DIR}")
+        except TaskCancelled:
+            raise
+        except Exception:
+            return
+        children = [line.strip() for line in listing.output.splitlines() if line.strip()]
+        if children:
+            present.add(path)
+        for child in children[:MAX_FILES_PER_DIR]:
+            await self._ingest_file(channel, child, present, files, texts)
 
     async def _collect(self, channel: TaskChannel, deliverables: list[str],
-                       discipline: str, instruction: str = '') -> dict[str, Any]:
-        """Re-read the artifact from disk. The model's claims are not evidence."""
+                       discipline: str, instruction: str = "") -> dict[str, Any]:
+        """Re-read the artifacts from disk. The model's claims are not evidence."""
+        present: set[str] = set()
         files: dict[str, bytes] = {}
+        texts: dict[str, str] = {}
         for path in deliverables:
-            try:
-                files[path] = await channel.read_file(path)
-            except (FileNotFoundError, TaskCancelled):
-                continue
-            except Exception:
-                continue
+            await self._ingest(channel, path, present, files, texts)
         ctx: dict[str, Any] = {
             "task_type": discipline,
             "instruction": instruction,
             "deliverables": deliverables,
             "files": files,
+            "texts": texts,
+            "present": present,
             "data": {},
         }
         merged: dict[str, Any] = {}
@@ -208,6 +279,11 @@ class GatedHarness:
         discipline = discipline_of(task)
         task_id = task.session or "unknown"
         started = time.time()
+        # Marker for -newer: only files this run wrote count as deliverables.
+        try:
+            await channel.exec("touch /tmp/.ple_start")
+        except Exception:
+            pass
 
         messages: list[dict] = [
             {"role": "system", "content": SYSTEM_PROMPT},

@@ -18,6 +18,7 @@ This harness therefore puts the check outside the decoder.
 | Component | Status |
 |---|---|
 | Gate layer (`verify.py`, `gates/`) | **Tested.** 30 hand-worked fixtures, `python -m unittest discover -s tests` |
+| Deliverable acquisition (`protocol.deliverables_of`, `harness._discover`, `extract.py`) | **Tested.** Absolute paths, folders, `submission.zip`, `.docx`, `.xlsx` — the shapes `eval/dev_set.yaml` actually uses |
 | Repair loop, playbook admission, telemetry | **Tested.** 5 loop tests with a scripted client |
 | `submission.yaml`, repo layout, strict-pass semantics | Matches the published competition contract |
 | WebSocket protocol (`protocol.py`) | **Verified** against `docs/protocol.md` v1 in `google-research/ple` — frame shapes, `cancel`, `usage`, size and concurrency limits |
@@ -146,13 +147,13 @@ winning Submission*, with the resource requirements described.
 | Item | Value |
 |---|---|
 | Runtime | Python 3.12, `uv`-managed venv at `/opt/harness/venv` |
-| Dependencies | `requirements.txt` — `websockets` only; the gate layer is stdlib |
+| Dependencies | `requirements.txt` — `websockets` only; the gate layer, and the `.docx`/`.xlsx`/`.zip` readers, are stdlib |
 | Build | `install:` in `submission.yaml`, runs once as root with internet |
 | Serve | `serve: /opt/harness/venv/bin/python {src}/serve.py` on `0.0.0.0:$PORT` |
 | Model access | injected by the evaluator proxy via `MODEL_BASE_URL` / `MODEL_API_KEY` |
 | Dev evaluation | `uv run python eval/run.py ../ple-harness` |
 | Contract checks | `uv run python -m kit check` and `uv run python -m kit artifacts` |
-| Tests | `python -m unittest discover -s tests` — 35 tests, no network |
+| Tests | `python -m unittest discover -s tests` — 47 tests, no network |
 
 Environment variables consumed: `PORT`, `MODEL_API`, `MODEL_NAME`,
 `MODEL_BASE_URL`, `MODEL_API_KEY`, plus `MAX_FIX_ROUNDS`, `PLAYBOOK_PATH`,
