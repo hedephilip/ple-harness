@@ -1,0 +1,12 @@
+# Deliberately minimal.
+#
+# /opt/harness is capped at 2 GiB compressed and runtime package downloads are
+# blocked, so every dependency here is a permanent budget line. The gate layer,
+# the HTTP client, the playbook and the telemetry writer are all stdlib.
+#
+# If a task needs PDF/XLSX/CAD parsing, do it inside the task container at run
+# time via the `exec` tool (the task image already carries those tools) rather
+# than importing a CAD kernel into the harness image. Pulling in ifcopenshell
+# or OCC would consume most of the cap for a capability the task container
+# already has.
+websockets>=12,<16

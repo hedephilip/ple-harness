@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.env
+*.log
+
+# telemetry is regenerated per sweep; commit only the paper figures
+telemetry/
+!telemetry/.gitkeep
+
+# artifacts/ is the exception: the competition requires it committed,
+# unpacked, <=512 MiB and <=10,000 files. Never ignore it.
