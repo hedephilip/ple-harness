@@ -1,11 +1,12 @@
 """WebSocket entrypoint.
 
-Binds 0.0.0.0:$PORT (must happen within 120 s of container start), accepts
-one task per connection, runs the gated loop, and ends with a `done` frame.
+Binds 0.0.0.0:$PORT with no keepalive pings — the protocol spec requires
+`ping_interval=None`, because an evaluator that pauses reading (waiting on the
+8-request limit) would otherwise trip a ping timeout and drop the connection.
 
-A task that dies still has to send `done` — a timed-out or crashed run
-without a `done` or `error` frame scores 0.0, which is the worst possible
-outcome and is entirely avoidable.
+Every task ends with exactly one `done` or `error`. A run that times out or
+crashes without either frame scores 0.0, and loses the work already written to
+the container.
 """
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ from gates import assert_registered, gate_index
 from harness import GatedHarness
 from llm import Client
 from playbook import Playbook
-from protocol import TaskChannel, frame_task
+from protocol import MAX_FRAME_BYTES, Task, TaskCancelled, TaskChannel
 from telemetry import Telemetry
 
 logging.basicConfig(
@@ -35,34 +36,35 @@ MAX_FIX_ROUNDS = int(os.environ.get("MAX_FIX_ROUNDS", "3"))
 
 
 async def handle(websocket, *_args) -> None:
-    task_id = "unknown"
+    session = "unknown"
     channel: TaskChannel | None = None
     try:
-        raw = await websocket.recv()
-        task = frame_task(raw)
-        task_id = str(task.get("task_id") or task.get("id") or "unknown")
+        task = Task.from_frame(json.loads(await websocket.recv()))
+        session = task.session or "unknown"
+        LOG.info("task %s timeout=%s mcp_servers=%d", session,
+                 task.agent_timeout_sec, len(task.mcp_servers))
 
         channel = TaskChannel(websocket, task)
         await channel.start()
 
-        client = Client()
-        playbook = Playbook()
-        telemetry = Telemetry()
-        enforce = os.environ.get("PLE_GATE_MODE", "on").strip().lower() != "off"
-        harness = GatedHarness(client, playbook, telemetry,
-                               max_fix_rounds=MAX_FIX_ROUNDS, enforce=enforce)
+        enrich = os.environ.get("PLE_GATE_MODE", "on").strip().lower() != "off"
+        harness = GatedHarness(Client(), Playbook(), Telemetry(),
+                               max_fix_rounds=MAX_FIX_ROUNDS, enforce=enrich)
+        passed, message = await harness.run(channel, task)
+        LOG.info("task %s passed=%s", session, passed)
+        await channel.done(message)
 
-        LOG.info("task %s discipline-gates=%s", task_id, len(assert_index()))
-        passed, summary = await harness.run(channel, task)
-        LOG.info("task %s passed=%s ", task_id, passed)
-        await channel.done(summary)
+    except TaskCancelled:
+        try:
+            if channel is not None:
+                await channel.done("Time limit reached; deliverables already written.")
+        except Exception:
+            pass
     except Exception as exc:
-        LOG.exception("task %s failed: %s", task_id, exc)
+        LOG.exception("task %s failed", session)
         frame = json.dumps({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
         try:
             await websocket.send(frame)
-            await websocket.send(json.dumps({"type": "done",
-                                             "summary": "harness error; see error frame"}))
         except Exception:
             pass
     finally:
@@ -70,18 +72,16 @@ async def handle(websocket, *_args) -> None:
             await channel.close()
 
 
-def assert_index() -> dict:
-    assert_registered()
-    return gate_index()
-
-
 async def main() -> None:
     port = int(os.environ.get("PORT", "8080"))
-    index = assert_index()
-    LOG.info("gate index: %s", {k: len(v) for k, v in index.items()})
-    async with websockets.serve(handle, "0.0.0.0", port, max_size=16 * 1024 * 1024):
-        LOG.info("listening on 0.0.0.0:%s model_api=%s", port, os.environ.get("MODEL_API"))
-        await asyncio.Future()          # run forever
+    assert_registered()
+    LOG.info("gates per discipline: %s",
+             {name: len(fns) for name, fns in gate_index().items()})
+    async with websockets.serve(handle, "0.0.0.0", port,
+                                max_size=MAX_FRAME_BYTES, ping_interval=None):
+        LOG.info("listening on 0.0.0.0:%s model_api=%s", port,
+                 os.environ.get("MODEL_API"))
+        await asyncio.Future()
 
 
 if __name__ == "__main__":

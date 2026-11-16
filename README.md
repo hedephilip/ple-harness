@@ -20,7 +20,7 @@ This harness therefore puts the check outside the decoder.
 | Gate layer (`verify.py`, `gates/`) | **Tested.** 30 hand-worked fixtures, `python -m unittest discover -s tests` |
 | Repair loop, playbook admission, telemetry | **Tested.** 5 loop tests with a scripted client |
 | `submission.yaml`, repo layout, strict-pass semantics | Matches the published competition contract |
-| WebSocket frame field names (`protocol.py`) | **Unverified.** Reconstructed from the guide; diff against `sample_submissions/pi-opus` before submitting |
+| WebSocket protocol (`protocol.py`) | **Verified** against `docs/protocol.md` v1 in `google-research/ple` — frame shapes, `cancel`, `usage`, size and concurrency limits |
 | `artifacts/` | **Not generated.** Requires `uv run python eval/run.py` with the competition repo and a model endpoint |
 
 Nothing above is claimed beyond what was actually run.
@@ -112,7 +112,8 @@ than a claim the numbers do not support.
 
 ## Known gaps
 
-- Protocol field names need confirming against `pi-opus` (see `protocol.py`).
+- `kit check` has not run: no Docker on this machine. The manifest was validated against the rules declared in `kit/spec.py` by inspection, not by the official validator.
+- Deliverable paths are parsed from `instruction` text, because the protocol carries none. Heuristic — validate on the dev set before trusting the contract gate.
 - Gates cover the four disciplines' core checks, not every clause in every code.
 - `structural` is 6 of 56 hidden tasks; `mechanical` (23) and `electrical` (18)
   are 73%. If time is short, extend mechanical and electrical first.
@@ -154,3 +155,4 @@ winning Submission*, with the resource requirements described.
 Environment variables consumed: `PORT`, `MODEL_API`, `MODEL_NAME`,
 `MODEL_BASE_URL`, `MODEL_API_KEY`, plus `MAX_FIX_ROUNDS`, `PLAYBOOK_PATH`,
 `TELEMETRY_DIR`, `PLE_GATE_MODE`.
+

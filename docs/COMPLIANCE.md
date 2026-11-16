@@ -121,3 +121,29 @@ The current page shows *"You have accepted the rules for this competition."*
 That suggests the acceptance step is done — worth confirming that identity
 verification is also complete before relying on it, since it was listed as a
 hard prerequisite for submitting.
+
+---
+
+## 8. One unresolved contradiction between two official documents
+
+The Kaggle overview says:
+
+> *"Switching model_api in submission.yaml to your target google-cloud/<id> model
+> before committing (after generating artifacts/ on a local or personal API
+> model) will not disqualify you."*
+
+The PLE repository's `docs/rules.md` says:
+
+> *"Your committed artifacts/ must be exported by eval/run.py from the harness
+> you submit, running the model_api declared in submission.yaml."*
+
+These cannot both be true. The first permits generating artifacts on a cheap
+model and switching; the second requires the declared model to have produced
+them.
+
+**This is a $1,270 question.** Generating artifacts on Claude Opus 5.5 costs
+roughly $1,495 for 87 dev runs; Gemini 3.8 Flash costs about $222.
+
+Do not resolve it by assumption. Ask on the Kaggle Discussion forum — public
+posting is explicitly permitted by C(6)(a) — and keep the answer. Until then,
+plan for the expensive path in the budget and the cheap path in the schedule.
