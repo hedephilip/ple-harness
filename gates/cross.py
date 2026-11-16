@@ -109,8 +109,6 @@ def claims_of(ctx: dict) -> dict[str, dict[str, Any]]:
 # instructing the agent to add artefacts nobody had asked for. The measured
 # fix is that a gate whose precondition is absent contributes nothing.
 
-_TEXT_SUFFIXES = (".md", ".txt", ".csv", ".json", ".py", ".html", ".xml",
-                  ".yaml", ".yml")
 
 # Disciplines whose gates are fed by the claims block. For these the block is
 # the input channel, so its absence is a genuine failure. For any other task

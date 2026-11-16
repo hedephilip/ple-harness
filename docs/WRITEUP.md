@@ -126,10 +126,9 @@ the claims marker the gate searches for.
 zero when it has "nothing to grade"; `dev_set.yaml` marks `final_message: true`
 for 14 of 29 tasks. The closing summary is graded input.
 
-The first version appended `[gated] unresolved hard-gate failures after 4
-round(s)` to it, which argued against the submission in its own summary. The gate
-verdict now goes out as a `log` frame; `final_message` carries the agent's words
-verbatim.
+The gate verdict therefore goes out as a `log` frame, and `final_message`
+carries the agent's own words verbatim. Writing a gate status into the summary is
+arguing against the submission in the one place the grader reads.
 
 ## 4. Engineering evidence
 
@@ -162,9 +161,10 @@ for inspection and is never read by the harness at run time.
   an LLM judge against a rubric (`grading: rubric`); a mechanical gate cannot add
   a point there. What the harness contributes on those tasks is a complete
   deliverable at the exact path and an accurate closing summary.
-- **Gate coverage is thin relative to the benchmark.** Twelve formulas and six
-  cross-cutting checks against a benchmark averaging 25.3 checks per task. The
-  gates that exist are correct and tested; they are not exhaustive.
+- **Gate coverage is thin relative to the benchmark.** Thirteen formula gates
+  across four disciplines plus six cross-cutting checks, against a benchmark
+  averaging 25.3 checks per task. The gates that exist are correct and tested;
+  they are not exhaustive.
 - **No MCP client.** The harness exposes `exec`, `read_file` and `write_file`
   only, so tasks that serve documents or CAD as MCP servers are reachable
   through the shell alone. This is a real ceiling, not a stylistic choice.

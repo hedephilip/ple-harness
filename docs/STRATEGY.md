@@ -15,10 +15,11 @@ Claims I could not verify are marked as such at the end.
 | Public writeups | **0** — the tab is empty |
 | Discussion topics | 15, almost all infrastructure: kit check after self-hosting, whether the largest dev tasks fit in 16 GB RAM, dev-time model access, a requested dry-run server |
 
-The competitive set is 36 teams, not 2,000 people. And since **Top 100 advance**
-to Stage 2, Stage 1 is a compliance gate rather than a filter. Completing a
-valid, measured submission is itself differentiating — most of the field is
-still fighting the packaging.
+The competitive set is 36 teams, not 2,000 people. `docs/rules.md` does not
+publish how entries are ranked or how many advance — it says that will be
+announced — so do not plan around a cutoff. Completing a valid, measured
+submission is itself differentiating: most of the field is still fighting the
+packaging.
 
 ---
 
@@ -115,7 +116,8 @@ carried forward:
 
 1. **"Cheap model + gates owns the low-cost frontier."** Dead. Below $0.20/task
    the open-weight models score **under 7%**, and Llama 4 Maverick scores 0.4%.
-   The prize floor is 0.138. A gate layer cannot rescue a model that never
+   No score floor is published in `docs/rules.md`, so plan on zero. A gate
+   layer cannot rescue a model that never
    produces a plausible deliverable — a gate can detect a wrong number, it
    cannot invent the engineering. Gates pay off in the **middle band**
    (Gemini 3.8 Flash 28.2% → Gemini 4 Argon 43.2%), not at the bottom.

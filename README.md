@@ -17,7 +17,7 @@ This harness therefore puts the check outside the decoder.
 
 | Component | Status |
 |---|---|
-| Gate layer (`verify.py`, `gates/`) | **Tested.** 30 hand-worked fixtures, `python -m unittest discover -s tests` |
+| Gate layer (`verify.py`, `gates/`) | **Tested.** 31 hand-worked fixtures; 13 discipline gates and 6 cross-cutting gates, `python -m unittest discover -s tests` |
 | Deliverable acquisition (`protocol.deliverables_of`, `harness._discover`, `extract.py`) | **Tested.** Absolute paths, folders, `submission.zip`, `.docx`, `.xlsx` — the shapes `eval/dev_set.yaml` actually uses |
 | Repair loop, playbook admission, telemetry | **Tested.** 5 loop tests with a scripted client |
 | `submission.yaml`, repo layout, strict-pass semantics | Matches the published competition contract |

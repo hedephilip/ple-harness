@@ -6,7 +6,7 @@ Produces, from a real sweep:
   * mean score      when final_score is present
   * round histogram how many tasks needed 0 / 1 / 2 / 3 repair rounds
   * failure table   gate_id x cause_code counts — this is Figure 3
-  * token cost      prompt + completion tokens, so the Pareto axis is honest
+  * token cost      prompt + completion tokens, so the score/cost view is honest
 
 Usage:
     python scripts/report_telemetry.py telemetry/tasks.csv telemetry/gates.csv

@@ -7,12 +7,12 @@ name: gated-harness
 #   gemini-4-argon         43.2%   $ 8.21/task
 #   gemini-3.8-flash       28.2%   $ 2.55/task
 #   glm-5.2                25.3%   (median of all configs is 25.7%)
-#   gemini-3.1-pro-preview 14.2%   (prize floor is 0.138 — this is marginal)
+#   gemini-3.1-pro-preview 14.2%   (lowest of the sponsored models)
 #   llama-4-maverick       <7%
 #
-# Model spread is ~50 points; harness spread for a fixed model is 0.7-12.1
-# (median 3.0). Running GLM 5.2 here would concede ~25 points before the gate
-# layer does any work.
+# Model spread is ~50 points. For Opus the seven harnesses span 47.3%-50.6%
+# (paper Table 3), so a harness can move a fixed model by single-digit points.
+# Running GLM 5.2 would concede ~25 points before the gate layer does any work.
 model_api: google-cloud/claude-opus-5-5
 
 install: >-

@@ -90,7 +90,6 @@ TOOLS: list[dict[str, Any]] = [
     }},
 ]
 
-CANDIDATE_SUFFIXES = (".md", ".txt", ".csv", ".json", ".xlsx", ".docx", ".pdf")
 
 
 class GatedHarness:
