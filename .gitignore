@@ -12,3 +12,16 @@ telemetry/
 
 # artifacts/ is the exception: the competition requires it committed,
 # unpacked, <=512 MiB and <=10,000 files. Never ignore it.
+
+# ---- Competition Data: never commit (Rules B(4)(b)) --------------------
+# Task corpora, environments, graders and references belong to the competition
+# and may be used only for participating. Only artifacts/ is committed.
+dev-tasks/
+tasks/
+environments/
+graders/
+references/
+*.pdf
+*.rvt
+*.ifc
+*.dwg

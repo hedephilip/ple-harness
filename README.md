@@ -123,3 +123,34 @@ than a claim the numbers do not support.
 
 Apache-2.0.
 
+
+## Licensing and competition data
+
+- **Harness code** — Apache-2.0 (`LICENSE`). Required by Rules B(5)(a).
+- **Documentation and the Kaggle Writeup** — CC BY 4.0. See
+  [docs/COMPLIANCE.md](docs/COMPLIANCE.md) §4.
+- **Competition Data is not in this repository and never will be.** Rules
+  B(4)(b) prohibit redistributing task corpora, environments, graders or
+  reference deliverables. `.gitignore` enforces this. Every gate fixture in
+  `tests/` is a hand-computed value from a published formula, not benchmark
+  data.
+
+## Reproducibility
+
+Required by Rules B(7)(a)(i) — the code must be *capable of generating the
+winning Submission*, with the resource requirements described.
+
+| Item | Value |
+|---|---|
+| Runtime | Python 3.12, `uv`-managed venv at `/opt/harness/venv` |
+| Dependencies | `requirements.txt` — `websockets` only; the gate layer is stdlib |
+| Build | `install:` in `submission.yaml`, runs once as root with internet |
+| Serve | `serve: /opt/harness/venv/bin/python {src}/serve.py` on `0.0.0.0:$PORT` |
+| Model access | injected by the evaluator proxy via `MODEL_BASE_URL` / `MODEL_API_KEY` |
+| Dev evaluation | `uv run python eval/run.py ../ple-harness` |
+| Contract checks | `uv run python -m kit check` and `uv run python -m kit artifacts` |
+| Tests | `python -m unittest discover -s tests` — 35 tests, no network |
+
+Environment variables consumed: `PORT`, `MODEL_API`, `MODEL_NAME`,
+`MODEL_BASE_URL`, `MODEL_API_KEY`, plus `MAX_FIX_ROUNDS`, `PLAYBOOK_PATH`,
+`TELEMETRY_DIR`, `PLE_GATE_MODE`.
