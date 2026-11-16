@@ -208,7 +208,6 @@ class GatedHarness:
         task_id = task.session or "unknown"
         started = time.time()
 
-        deliverables = await self._discover(channel, task)
         messages: list[dict] = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": task.instruction},
@@ -217,6 +216,7 @@ class GatedHarness:
         rounds_used = 0
         failures: list[GateResult] = []
         pending_prev: list[GateResult] = []
+        deliverables: list[str] = list(deliverables_of(task))
         artifact_path = deliverables[0] if deliverables else ""
         passed = False
         summary = ""
@@ -227,6 +227,14 @@ class GatedHarness:
                 rounds_used = round_index + 1
                 completion = await self._agent_turn(channel, messages)
                 summary = completion.content.strip()
+
+                # Discover AFTER the turn. The gate exists to judge what the
+                # agent actually wrote; a listing taken before the agent ran
+                # would gate an empty folder and fail every check vacuously.
+                discovered = await self._discover(channel, task)
+                if discovered:
+                    deliverables = discovered
+                    artifact_path = deliverables[0]
 
                 ctx = await self._collect(channel, deliverables, discipline)
                 gate_started = time.time()
@@ -248,6 +256,12 @@ class GatedHarness:
                     break
 
                 failures = GATES.hard_failures(results)
+
+                # Nothing readable on disk means the gate had nothing to judge.
+                # Re-prompting "repair the artifacts" would burn whole model
+                # rounds on advice the agent cannot act on.
+                if not ctx["files"]:
+                    break
                 if round_index == budget - 1:
                     break
 
@@ -272,11 +286,23 @@ class GatedHarness:
         )
 
         if passed:
-            headline = summary or "Deliverables written and verified."
-            return True, (f"{headline}\n\n[gated] all hard gates passed in "
-                          f"{rounds_used} round(s).")
-        if failures:
+            verdict = f"[gated] all hard gates passed in {rounds_used} round(s)."
+        elif failures:
             detail = "; ".join(f"{r.gate_id}:{r.cause_code}" for r in failures)
-            return False, (f"{summary}\n\n[gated] unresolved hard-gate failures after "
-                           f"{rounds_used} round(s): {detail}")
-        return False, summary or "No deliverable produced."
+            verdict = (f"[gated] {len(failures)} hard gate(s) unresolved after "
+                       f"{rounds_used} round(s): {detail}")
+        else:
+            verdict = ("[gated] no hard gate was evaluated: no readable "
+                       "deliverable on disk.")
+        try:
+            await channel.log(verdict)
+        except Exception:  # a closed socket must not change the outcome
+            pass
+
+        # `final_message` is handed to the grader, which reads it alongside the
+        # files. It carries the agent's own words only: stamping our internal
+        # verdict on it would tell the grader the work failed.
+        if summary:
+            return passed, summary
+        return passed, ("Deliverables written and verified." if passed
+                        else "No deliverable produced.")

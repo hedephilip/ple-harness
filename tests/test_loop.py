@@ -133,7 +133,11 @@ class TestGatedLoop(unittest.TestCase):
         passed, summary = asyncio.run(harness.run(channel, self._task()))
 
         self.assertTrue(passed, summary)
-        self.assertIn("gated", summary)
+        # final_message belongs to the grader: the agent's words, untouched.
+        self.assertEqual(summary, "finished")
+        self.assertTrue(any("all hard gates passed" in line
+                            for line in channel.logs),
+                        f"gate verdict must reach the log, got {channel.logs}")
         self.assertTrue(channel.usage_frames, "usage frames must be emitted for cost accounting")
 
         with (Path(self.tmp) / "tasks.csv").open() as handle:
@@ -152,14 +156,18 @@ class TestGatedLoop(unittest.TestCase):
         channel = FakeChannel()
         passed, summary = asyncio.run(harness.run(channel, self._task()))
         self.assertFalse(passed)
-        self.assertIn("unresolved hard-gate failures", summary)
+        self.assertEqual(summary, "finished")
+        self.assertTrue(any("hard gate(s) unresolved" in line
+                            for line in channel.logs))
         self.assertIsNone(channel.done_summary)   # serve.py sends done, not the harness
 
     def test_missing_deliverable_blocks(self):
         harness, _ = self._harness([stop("I could not do it")], max_fix_rounds=0)
-        passed, summary = asyncio.run(harness.run(FakeChannel(), self._task()))
+        channel = FakeChannel()
+        passed, summary = asyncio.run(harness.run(channel, self._task()))
         self.assertFalse(passed)
-        self.assertIn("MISSING_DELIVERABLE", summary)
+        self.assertEqual(summary, "I could not do it")
+        self.assertIn("MISSING_DELIVERABLE", " ".join(channel.logs))
 
     def test_lesson_admitted_only_on_verified_flip(self):
         harness, playbook = self._harness([

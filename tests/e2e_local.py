@@ -213,8 +213,12 @@ def main() -> int:
 
     if not done:
         failures.append("no done frame was sent")
-    if "gated" not in final_message:
-        failures.append(f"done did not report a gated pass: {final_message[:200]!r}")
+    logs = " ".join(str(m.get("text", "")) for m in frames["log"])
+    if "[gated]" not in logs:
+        failures.append(f"no log frame carried the gate verdict: {logs[:200]!r}")
+    if "[gated]" in final_message:
+        failures.append("the gate verdict leaked into final_message, which the "
+                        f"grader reads: {final_message[:200]!r}")
     if "memo.md" not in frames["files"]:
         failures.append("the agent's write_file never reached the evaluator")
     if ModelState.calls < 2:
@@ -233,6 +237,7 @@ def main() -> int:
     print("usage frames                 ", len(frames["usage"]))
     print("files written                ", frames["files"])
     print("done final_message           ", final_message.replace("\n", " ")[:120])
+    print("log frames                   ", logs.replace("\n", " ")[:120])
     if proc.returncode not in (0, -15, 1, None):
         print("server exit code             ", proc.returncode)
     if output.strip():
