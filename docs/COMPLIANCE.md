@@ -47,8 +47,15 @@ Consequences:
   Data was used to build them, so the repo is publishable at close without a
   data-licensing problem. That was a quality choice; it turns out to be a
   compliance property.
-- **The repo is private for two reasons now** — competitive and legal. Sharing
-  Competition Data or derived corpora publicly would breach B(4)(b).
+- **The repo is public, and that is the compliant way to give access.**
+  C(5)(d): *"No private sharing outside of Teams. Privately sharing code or
+  data outside of Teams is not permitted. It's okay to share code if made
+  available to all Participants on the forums."* Adding a judge or an
+  organizer as a private collaborator would be private sharing outside a
+  Team; a public repository is not private sharing, and B(5)(a) requires an
+  open-source licence for the winning harness anyway. The binding constraint
+  is therefore not visibility but content: B(4)(b) forbids publishing
+  Competition Data, so the repo stays public and the data stays out.
 
 ---
 
@@ -63,14 +70,15 @@ So:
 
 | Action | Status |
 |---|---|
-| Private repo of our own code, one participant, no other team | Fine |
+| Public repo of our own code (no Competition Data) | **Permitted — this is the current state** |
+| Adding a judge or organizer as a private collaborator on a private repo | **Breach of C(5)(d)** |
 | Posting our approach in the Kaggle Discussion forum | Permitted — and it is public |
 | DMing our harness to another team, or receiving theirs | **Breach** |
 | Merging teams | Only through the official merger, before the deadline |
 
 Practical rule: anything we say about this harness goes in public, or nowhere.
-And given five of ten visible notebooks are already gate-based, public is not
-where our edge should go before 5 Jan.
+That is now literal — the repository is public — so treat every commit as
+read by a judge and by competing teams.
 
 ---
 
@@ -111,6 +119,10 @@ the install step, the serve command and the eval command.
 | C(10) | W-8BEN / tax forms for foreign winners | Needed only on winning |
 | B(6) | External data publicly accessible at no cost, or reasonable | We ship no external data; AISC/NEC enter only as published factors (φ = 0.90, 1.25 demand factor, K = 12.9), not as reproduced standard text |
 | B(4) | Data access: competition use only | Enforced by `.gitignore` |
+| B(2) | One submission per team | One entry |
+| C(7)(a) | *"There will be no leaderboards for Hackathon Competitions."* Judged on the Evaluation Rubric published on the site | Confirms the writeup is the scored artefact, not a hidden-test mean |
+| B(5)(a) | Winning licence: Apache 2.0/MIT for code, CC BY 4.0 for writeup and docs | `LICENSE` is Apache-2.0; docs and writeup carry CC BY 4.0 |
+| B(7)(a)(i) | Code must be capable of generating the winning submission, with resources described | README `Reproducibility` table |
 
 ---
 
@@ -141,8 +153,10 @@ These cannot both be true. The first permits generating artifacts on a cheap
 model and switching; the second requires the declared model to have produced
 them.
 
-**This is a $1,270 question.** Generating artifacts on Claude Opus 5.5 costs
-roughly $1,495 for 87 dev runs; Gemini 3.8 Flash costs about $222.
+**This is a cost question with an unmeasured answer.** The paper reports $17.18
+per task for Opus in Claude Code (Table 3), so 29 dev tasks cost roughly $500
+per pass at that rate — arithmetic on a published figure, not a quote, and
+not a prediction for this harness.
 
 Do not resolve it by assumption. Ask on the Kaggle Discussion forum — public
 posting is explicitly permitted by C(6)(a) — and keep the answer. Until then,

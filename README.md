@@ -84,7 +84,7 @@ governing value.
 ## Running
 
 ```bash
-python -m unittest discover -s tests -v      # 36 tests, no network, no deps
+python -m unittest discover -s tests -v      # 47 tests, no network, no deps
 python tests/e2e_local.py                    # spawns serve.py, needs websockets only
 PORT=8080 MODEL_API=google-cloud/glm-5.2 python serve.py
 ```
@@ -115,13 +115,11 @@ than a claim the numbers do not support.
 
 ## Known gaps
 
-- `kit check` has not run: no Docker on this machine. The manifest was validated against the rules declared in `kit/spec.py` by inspection, not by the official validator. The end-to-end test covers the same path minus the container build.
+- **Two staged gaps, measured.** `kit check` on this tree passes `submission.yaml`, `files`, `build`, `model`, `listen` and `smoke` (bundle 110 MiB, image built in ~100 s, websocket accepted 2 s after start, smoke task one gate round with a clean `final_message`). It warns on `mcp` — no MCP client, so task app servers are reachable through the shell only — and on `artifacts`, which do not exist until the dev set is run. `ready: false`, `unready: "artifacts"`.
 - Deliverable paths are parsed from `instruction` text, because the protocol carries none. Heuristic — validate on the dev set before trusting the contract gate.
 - Gates cover the four disciplines' core checks, not every clause in every code.
-- `structural` is 6 of 56 hidden tasks; `mechanical` (23) and `electrical` (18)
-  are 73%. If time is short, extend mechanical and electrical first.
-- Claude Opus 5.5 is both the strongest published solver and the Stage 2 judge.
-  That is worth stating in the writeup rather than leaving it to be noticed.
+- Gate coverage is unequal across disciplines, and the split of the 56 hidden tasks is not published, so effort is allocated by the published 85-task benchmark instead: mechanical 30, electrical 27, civil 18, structural 10. Mechanical and electrical are therefore the largest missing returns; structural, with three formula gates, is the best covered.
+- Claude Opus 5.5 is both the strongest published solver and the model the paper uses to judge rubric items (paper sec.5.1). Worth stating rather than leaving it to be noticed: the harness drives the same family that grades the rubrics, which is a coincidence of the setup and not something this entry exploits.
 
 ## Licence
 
