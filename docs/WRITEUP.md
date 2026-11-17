@@ -88,6 +88,8 @@ Four findings shaped the build, each from a failure we reproduced:
   a file containing `HELLO` — was failed twice, for carrying no claims block and
   no revision table, and four model rounds were spent demanding artefacts nobody
   asked for. Gates now declare `applies(ctx)` and decline what they cannot judge.
+  Measured on that task: repair rounds 4 → 1, model calls 5 → 2,
+  tokens 320/40 → 128/16.
 - **The verdict was contaminating graded output.** `artifacts.md` exports
   `final_message.md` per task and 14 of 29 dev tasks are graded with it. Writing
   a gate status into that summary argues against the submission in the one place
@@ -119,6 +121,12 @@ test, and they are the ones that changed behaviour:
 | | grader-facing summary | carried a gate verdict | agent's words only |
 | Acquisition (folders, zip, docx) | formats read | `md`, `txt` | + folders, `submission.zip`, `.docx`, `.xlsx` |
 | | discovery scope | `/app`, depth 3 | `/app` + `/filesystem`, mtime-bounded |
+| | protocol requests | 2 | 5 |
+
+Requests are not monotonic across these changes: conditional gates take
+them from 5 to 2, then acquisition returns them to 5, because opening a
+folder or a package costs one read per member. Tokens stay at 128/16
+throughout, since the model is called twice either way.
 
 **Two things that failed or surprised us.** First, *"a gate that always runs is
 the safe choice."* It is not. A false positive costs more than a missed check,
@@ -185,7 +193,8 @@ round budget are there to bound.
 ## 4. Efficiency & Scaling (20 pts)
 
 A score-versus-cost curve needs the dev run. The measured datapoint we have is the
-kit smoke task: 2 protocol requests, 128 input / 16 output tokens, 1 second, one
+kit smoke task: 5 protocol requests (reads, not model calls), 128 input /
+16 output tokens, 1 second, one
 gate round. That is a plumbing measurement, not a performance claim.
 
 The design bounds cost in three places rather than by hoping: repairs are
