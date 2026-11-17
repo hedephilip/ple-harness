@@ -121,16 +121,18 @@ than a claim the numbers do not support.
 - Gate coverage is unequal across disciplines, and the split of the 56 hidden tasks is not published, so effort is allocated by the published 85-task benchmark instead: mechanical 30, electrical 27, civil 18, structural 10. Mechanical and electrical are therefore the largest missing returns; structural, with three formula gates, is the best covered.
 - Claude Opus 5.5 is both the strongest published solver and the model the paper uses to judge rubric items (paper sec.5.1). Worth stating rather than leaving it to be noticed: the harness drives the same family that grades the rubrics, which is a coincidence of the setup and not something this entry exploits.
 
-## Licence
-
-Apache-2.0.
-
-
-## Licensing and competition data
+## Licensing, provenance and competition data
 
 - **Harness code** — Apache-2.0 (`LICENSE`). Required by Rules B(5)(a).
 - **Documentation and the Kaggle Writeup** — CC BY 4.0. See
   [docs/COMPLIANCE.md](docs/COMPLIANCE.md) §4.
+- **Provenance.** The harness is original work written for this competition.
+  `protocol.py` implements `docs/protocol.md` — documentation, not code — and no
+  file from `kit/`, `sample_submissions/` or any other entrant's repository was
+  copied into this tree. Gate formulae are implemented from the published codes
+  and are covered by hand-computed fixtures in `tests/`, not by benchmark
+  reference values. Rules C(14)(a) requires this warranty; the tree is small
+  enough (35 files, 0.28 MB) for a judge to check it.
 - **Competition Data is not in this repository and never will be.** Rules
   B(4)(b) prohibit redistributing task corpora, environments, graders or
   reference deliverables. `.gitignore` enforces this. Every gate fixture in
