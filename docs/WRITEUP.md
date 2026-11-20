@@ -225,13 +225,14 @@ python -m unittest discover -s tests           # 56 tests, no network
 python tests/e2e_local.py                      # gate reject → repair → pass over a real WebSocket
 ```
 
-Stated exactly as it stands: `kit check` passes `submission.yaml`, `files`,
-`build`, `model`, `listen` and `smoke` on this tree. The harness carries an MCP
-client for the task's Streamable HTTP transport — `initialize`, `tools/list`,
-`tools/call`, with JSON and server-sent-event replies both parsed — so a task's
-app servers are reachable as model tools rather than only through the shell.
-`artifacts` warns because the dev set has not been run, so `kit artifacts` does
-not pass yet and this writeup does not claim it does.
+Stated exactly as it stands: `kit check` passes seven of its eight stages on
+this tree — `submission.yaml`, `files`, `build`, `model`, `listen`, `smoke` and
+`mcp`. The `mcp` stage exercises the app-server path end to end (9 requests,
+192 in / 24 out tokens): the harness negotiates `initialize`, lists the server's
+tools and calls one, with JSON and server-sent-event replies both parsed, so a
+task's app servers are reachable as model tools rather than only through the
+shell. The eighth stage, `artifacts`, warns because the dev set has not been run,
+so `kit artifacts` does not pass yet and this writeup does not claim it does.
 The 56 tests and the end-to-end WebSocket test pass with no network.
 
 ---
