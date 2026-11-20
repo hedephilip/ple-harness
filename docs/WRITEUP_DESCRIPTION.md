@@ -61,8 +61,8 @@ a valid deliverable. Every gate is driven both ways — a hand-computed complian
 case that must stay green, and one single-parameter perturbation that must trip it
 with a specific cause code. All 13 formula gates and all 6 cross-cutting gates pass
 in both directions: **0 false positives, 0 false negatives across the 19-gate
-suite.** The cases derive from the formulae, not from benchmark values, so the
-suite can tell a correct gate from one that agrees with itself. `python tests/test_fidelity.py` prints the matrix.
+suite.** The cases derive from the formulae, so the suite can tell a correct gate
+from one that agrees with itself. `python tests/test_fidelity.py` prints the matrix.
 
 ### 1.2 Ablations
 
@@ -129,7 +129,7 @@ to initialise is logged and skipped, because the shell still works.
 Model calls are shaped per provider: no sampling parameters reach Claude, the
 system prompt and newest message carry `cache_control` breakpoints, `max_tokens`
 defaults to 32000, and 429/5xx are retried while 400 is not — a 400 retried
-unchanged is a wasted turn. Eleven tests assert the shape; the stub cannot.
+unchanged is a wasted turn. 
 
 **One dev task against an engineer's workflow — `lv-cable-sizing`.** Its declared
 deliverable is a `submission.zip` under
@@ -181,8 +181,10 @@ Declaring an open-weight model puts this entry at the cheap end of the cost
 axis and, per the paper, in the weakest performance band, so the score has to
 come from the gate layer or not at all.
 
-The design bounds cost in three places rather than by hoping: repairs are
-round-budgeted rather than token-budgeted; exactly one lesson is injected per
+The design bounds cost in three places rather than by hoping. Repairs are
+round-budgeted rather than token-budgeted, and a round that reproduces the
+same hard failures stops the loop instead of repeating itself — that is
+where cost plateaus rather than growing with the budget. exactly one lesson is injected per
 round, so the context does not grow into a transcript of everything that ever
 failed; and `MAX_STEPS_PER_ROUND` caps tool misuse inside a turn, which is where
 an unpriced loop usually hides. Token usage is reported per model call through
@@ -198,7 +200,7 @@ At the SHA above:
 ```bash
 uv run python -m kit check ../ple-harness      # 8 stages
 uv run python -m kit artifacts ../ple-harness  # no Docker needed
-python -m unittest discover -s tests           # 80 tests, no network
+python -m unittest discover -s tests           # 81 tests, no network
 python tests/test_fidelity.py                  # per-gate matrix: valid case vs perturbation
 python tests/e2e_local.py                      # gate reject → repair → pass over a real WebSocket
 ```
@@ -214,4 +216,4 @@ model is `google-cloud/llama-4-maverick`.
 
 Reference: R. Han et al., *PLE: Physical-Engineering's Last Exam*,
 arXiv:2610.30537, 2026.
-The 80 tests and the end-to-end WebSocket test pass with no network.
+The 81 tests and the end-to-end WebSocket test pass with no network.

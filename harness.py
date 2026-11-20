@@ -393,6 +393,9 @@ class GatedHarness:
         failures: list[GateResult] = []
         no_gate = False
         ran_out_of_time = False
+        plateau = False
+        # Signature of the previous round's hard failures, for plateau detection.
+        previous_signature: tuple[str, ...] | None = None
         pending_prev: list[GateResult] = []
         deliverables: list[str] = list(deliverables_of(task))
         artifact_path = deliverables[0] if deliverables else ""
@@ -452,6 +455,20 @@ class GatedHarness:
 
                 failures = GATES.hard_failures(results)
 
+                # If a repair round reproduces the same failures, the next round
+                # will reproduce them too: the agent is not making progress, and
+                # spending the remaining budget on it only burns tokens. Stop and
+                # report, rather than looping until the budget is gone.
+                signature = tuple(sorted(f"{r.gate_id}:{r.cause_code}"
+                                         for r in failures))
+                if signature and signature == previous_signature:
+                    await channel.log(
+                        "[gated] no progress: the same checks failed again after a "
+                        "repair round; stopping instead of repeating it")
+                    plateau = True
+                    break
+                previous_signature = signature
+
                 # Nothing readable on disk means the gate had nothing to judge.
                 # Re-prompting "repair the artifacts" would burn whole model
                 # rounds on advice the agent cannot act on.
@@ -480,7 +497,11 @@ class GatedHarness:
             error="" if passed else f"{len(failures)} hard gate(s) unresolved",
         )
 
-        if ran_out_of_time:
+        if plateau:
+            verdict = (f"[gated] repair plateaued after {rounds_used} round(s): the "
+                       f"same hard checks failed twice, so further rounds would "
+                       f"repeat the same repair.")
+        elif ran_out_of_time:
             verdict = (f"[gated] stopped on the time budget after {rounds_used} "
                        f"round(s); gates were not re-run after the stop.")
         elif passed:

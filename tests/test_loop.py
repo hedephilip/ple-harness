@@ -162,8 +162,8 @@ class TestGatedLoop(unittest.TestCase):
         self.assertFalse(passed)
         self.assertTrue(summary.startswith("finished"))
         self.assertIn("Unverified in this run", summary)
-        self.assertTrue(any("hard gate(s) unresolved" in line
-                            for line in channel.logs))
+        self.assertTrue(any("plateaued" in line or "hard gate(s) unresolved" in line
+                            for line in channel.logs), channel.logs)
         self.assertIsNone(channel.done_summary)   # serve.py sends done, not the harness
 
     def test_missing_deliverable_blocks(self):
@@ -250,6 +250,44 @@ class TestTimeBudget(unittest.TestCase):
 
         passed, _ = asyncio.run(harness.run(channel, task))
         self.assertTrue(passed, "an untimed task must not be cut short")
+
+
+def memo_with(**overrides) -> str:
+    """A claims memo with one structural input overridden."""
+    claims = {"units": UNITS,
+              "structural": {**BASE, **overrides},
+              "requirements": REQS,
+              "revisions": REVS}
+    return "# Check\n\n<!-- PLE-CLAIMS\n" + json.dumps(claims) + "\n-->\n"
+
+
+class TestRepairPlateau(unittest.TestCase):
+    def test_a_changing_failure_set_is_not_cut_short(self):
+        """Plateau detection must fire on staleness, not on any second failure.
+
+        Round 1 fails flexure; round 2 fails shear instead. The failure set
+        changed, so the loop must keep repairing rather than stop.
+        """
+        tmp = tempfile.mkdtemp()
+        client = ScriptedClient([
+            write_call("memo.md", memo(400)),                    # flexure fails
+            stop(),
+            write_call("memo.md", memo_with(Vu_kip=300)),         # shear fails
+            stop(),
+            write_call("memo.md", memo(300)),                    # both pass
+            stop(),
+        ])
+        harness = GatedHarness(client, Playbook(Path(tmp) / "playbook.jsonl"),
+                               Telemetry(tmp, run_index=0, run_id="plateau"),
+                               max_fix_rounds=3)
+        channel = FakeChannel()
+        task = Task(instruction="Size the beam and write memo.md with the flexure check.",
+                    workdir="/app", session="T-PLATEAU")
+
+        passed, _ = asyncio.run(harness.run(channel, task))
+
+        self.assertTrue(passed, "a changing failure set should still be repairable")
+        self.assertFalse(any("no progress" in line for line in channel.logs), channel.logs)
 
 
 if __name__ == "__main__":
