@@ -93,13 +93,20 @@ jobs:
             echo "::error::then add a read token as the repository secret HF_TOKEN."
             exit 1
           fi
-          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $HF_TOKEN" \
-            https://huggingface.co/api/datasets/google/physical-engineerings-last-exam/tree/main)
-          echo "dataset tree with token: HTTP $code"
-          if [ "$code" != "200" ]; then
-            echo "::error::The token cannot read the dataset (HTTP $code). Request access first."
-            exit 1
-          fi
+          # Probe a real file, not the listing. The metadata tree answers 200 even
+          # for an account without access, which is exactly how this was missed.
+          code=$(curl -sL -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $HF_TOKEN" \
+            https://huggingface.co/datasets/google/physical-engineerings-last-exam/resolve/main/.gitattributes)
+          echo "dataset blob with token: HTTP $code"
+          case "$code" in
+            200) ;;
+            401) echo "::error::The token was rejected. Check that it is a read token for the granted account."; exit 1 ;;
+            403) echo "::error::The token is valid but the account has no access to this gated dataset."
+                 echo "::error::Open https://huggingface.co/datasets/google/physical-engineerings-last-exam signed in,"
+                 echo "::error::click 'Agree and access repository', then re-dispatch."
+                 exit 1 ;;
+            *)   echo "::error::Dataset blob fetch returned HTTP $code."; exit 1 ;;
+          esac
 
       - name: Run the dev tasks
         working-directory: ${{ runner.temp }}/ple
