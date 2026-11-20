@@ -1,18 +1,22 @@
 name: dev-run
 
 # Produces artifacts/ on a machine that meets the runner's requirements: the
-# standard GitHub runner gives 4 vCPU, 16 GB RAM and ~14 GB of disk, enough for
-# the smaller dev tasks. Every task carries a 360-minute limit, so a subset per
-# dispatch is the only sane shape here.
+# standard GitHub runner gives 4 vCPU, 16 GB RAM and ~14 GB of disk.
+#
+# The model is a local Ollama instance fronted by the kit's LiteLLM proxy, which
+# is the sanctioned local path: eval/run.py refuses --model-base-url while
+# submission.yaml declares a google-cloud/* model, and tells you to point
+# MODEL_PROXY_URL at your server instead. The proxy maps the declared id onto the
+# local model, so the harness still asks for google-cloud/llama-4-maverick.
 on:
   workflow_dispatch:
     inputs:
       tasks:
-        description: "comma-separated dev task ids (empty = all 29, will not fit)"
+        description: "comma-separated dev task ids"
         required: true
-        default: "fire-test-validation-memo"
+        default: "roof-deck-design"
       model:
-        description: "ollama model tag"
+        description: "ollama model tag served behind the proxy"
         required: true
         default: "qwen2.5:1.5b"
 
@@ -24,6 +28,9 @@ jobs:
     name: run dev tasks
     runs-on: ubuntu-latest
     timeout-minutes: 350
+    env:
+      MODEL_PROXY_KEY: ci-proxy-key
+      MODEL_PROXY_URL: http://127.0.0.1:4000
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,10 +45,9 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Start a local model
+      - name: Start the local model
         run: |
           curl -fsSL https://ollama.com/install.sh | sh
-          mkdir -p "$HOME/.ollama"
           OLLAMA_HOST=0.0.0.0:11434 nohup ollama serve > "$HOME/ollama.log" 2>&1 &
           for i in $(seq 1 30); do
             curl -sf http://127.0.0.1:11434/api/tags > /dev/null && break
@@ -49,40 +55,59 @@ jobs:
           done
           ollama pull "${{ inputs.model }}"
           ollama list
-          # The task container reaches the host through Docker's bridge.
-          echo "bridge: $(ip -4 addr show docker0 | awk '/inet /{print $2}')"
+
+      - name: Start the model proxy
+        run: |
+          cat > "$RUNNER_TEMP/proxy.yaml" <<'YAML'
+          model_list:
+            - model_name: llama-4-maverick
+              litellm_params: {model: ollama_chat/${{ inputs.model }}, api_base: http://127.0.0.1:11434}
+            - model_name: google-cloud/llama-4-maverick
+              litellm_params: {model: ollama_chat/${{ inputs.model }}, api_base: http://127.0.0.1:11434}
+          litellm_settings:
+            drop_params: true
+            num_retries: 1
+            request_timeout: 900
+          general_settings:
+            master_key: os.environ/MODEL_PROXY_KEY
+          YAML
+          python -m pip install --quiet 'litellm[proxy]'
+          nohup litellm --config "$RUNNER_TEMP/proxy.yaml" --host 0.0.0.0 --port 4000 \
+            > "$HOME/proxy.log" 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf -H "Authorization: Bearer $MODEL_PROXY_KEY" http://127.0.0.1:4000/v1/models > /dev/null && break
+            sleep 2
+          done
+          curl -s -H "Authorization: Bearer $MODEL_PROXY_KEY" http://127.0.0.1:4000/v1/models | head -c 400
 
       - name: Fetch the benchmark
-        run: |
-          git clone --depth 1 https://github.com/google-research/ple ../ple
+        run: git clone --depth 1 https://github.com/google-research/ple "$RUNNER_TEMP/ple"
 
       - name: Run the dev tasks
-        working-directory: ../ple
-        env:
-          MODEL_NAME: ${{ inputs.model }}
+        working-directory: ${{ runner.temp }}/ple
         run: |
           uv tool install harbor==0.20.0 --with websockets
-          uv run python -m eval.run ../ple-harness \
+          uv run python -m eval.run "$GITHUB_WORKSPACE" \
             --tasks "${{ inputs.tasks }}" \
-            --model-base-url "http://172.17.0.1:11434/v1" \
             --trials 1 \
             --attempts 1 \
-            --out ../run-out
+            --out "$GITHUB_WORKSPACE/run-out"
 
       - name: Show what was produced
         if: always()
         run: |
-          ls -la ../run-out 2>/dev/null || true
-          ls -la artifacts 2>/dev/null || echo "no artifacts/ yet"
-          cat artifacts/manifest.json 2>/dev/null | head -40 || true
+          echo '--- proxy log tail ---'; tail -20 "$HOME/proxy.log" 2>/dev/null || true
+          echo '--- run-out ---'; ls -la run-out 2>/dev/null || true
+          echo '--- artifacts ---'; ls -la artifacts 2>/dev/null || echo 'no artifacts/'
+          head -c 1200 artifacts/manifest.json 2>/dev/null || true
 
-      - name: Keep the run log
+      - name: Keep the run directory
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: run-out
           path: |
-            ../run-out
+            run-out
             artifacts
           if-no-files-found: warn
 
