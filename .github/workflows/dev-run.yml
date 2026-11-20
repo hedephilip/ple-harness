@@ -1,0 +1,100 @@
+name: dev-run
+
+# Produces artifacts/ on a machine that meets the runner's requirements: the
+# standard GitHub runner gives 4 vCPU, 16 GB RAM and ~14 GB of disk, enough for
+# the smaller dev tasks. Every task carries a 360-minute limit, so a subset per
+# dispatch is the only sane shape here.
+on:
+  workflow_dispatch:
+    inputs:
+      tasks:
+        description: "comma-separated dev task ids (empty = all 29, will not fit)"
+        required: true
+        default: "fire-test-validation-memo"
+      model:
+        description: "ollama model tag"
+        required: true
+        default: "qwen2.5:1.5b"
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    name: run dev tasks
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Start a local model
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          mkdir -p "$HOME/.ollama"
+          OLLAMA_HOST=0.0.0.0:11434 nohup ollama serve > "$HOME/ollama.log" 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:11434/api/tags > /dev/null && break
+            sleep 2
+          done
+          ollama pull "${{ inputs.model }}"
+          ollama list
+          # The task container reaches the host through Docker's bridge.
+          echo "bridge: $(ip -4 addr show docker0 | awk '/inet /{print $2}')"
+
+      - name: Fetch the benchmark
+        run: |
+          git clone --depth 1 https://github.com/google-research/ple ../ple
+
+      - name: Run the dev tasks
+        working-directory: ../ple
+        env:
+          MODEL_NAME: ${{ inputs.model }}
+        run: |
+          uv tool install harbor==0.20.0 --with websockets
+          uv run python -m eval.run ../ple-harness \
+            --tasks "${{ inputs.tasks }}" \
+            --model-base-url "http://172.17.0.1:11434/v1" \
+            --trials 1 \
+            --attempts 1 \
+            --out ../run-out
+
+      - name: Show what was produced
+        if: always()
+        run: |
+          ls -la ../run-out 2>/dev/null || true
+          ls -la artifacts 2>/dev/null || echo "no artifacts/ yet"
+          cat artifacts/manifest.json 2>/dev/null | head -40 || true
+
+      - name: Keep the run log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-out
+          path: |
+            ../run-out
+            artifacts
+          if-no-files-found: warn
+
+      - name: Commit artifacts
+        if: success()
+        run: |
+          git config user.name "dev-run"
+          git config user.email "dev-run@users.noreply.github.com"
+          git add -A artifacts
+          if git diff --cached --quiet; then
+            echo "no artifacts to commit"
+          else
+            git commit -m "artifacts: dev run of ${{ inputs.tasks }} on ${{ inputs.model }}"
+            git push
+          fi
