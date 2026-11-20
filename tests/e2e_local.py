@@ -64,8 +64,13 @@ class FakeModel(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(length) or b"{}")
         messages = body.get("messages") or []
         last = messages[-1] if messages else {}
-        repair = (last.get("role") == "user"
-                  and "MECHANICAL GATE FAILED" in (last.get("content") or ""))
+        # Claude cache breakpoints deliver content as a list of blocks, so the
+        # text has to be joined before it can be searched.
+        content = last.get("content") or ""
+        if isinstance(content, list):
+            content = "\n".join(part.get("text", "") for part in content
+                                if isinstance(part, dict))
+        repair = last.get("role") == "user" and "GATE FAILED" in content
         has_tool_result = any(m.get("role") == "tool" for m in messages)
 
         if repair:

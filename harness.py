@@ -313,8 +313,13 @@ class GatedHarness:
         return f"unknown tool {name!r}"
 
     # -- gated completion -------------------------------------------------
-    def _feedback(self, failures: list[GateResult]) -> tuple[str, dict[str, str]]:
-        lines = ["MECHANICAL GATE FAILED. The artifacts on disk do not satisfy the "
+    def _feedback(self, failures: list[GateResult],
+                  discipline: str = "hard") -> tuple[str, dict[str, str]]:
+        # Name the discipline that failed. Previously every task was told
+        # "MECHANICAL GATE FAILED", including structural and electrical ones,
+        # which misdirects the repair it is asking for.
+        label = (discipline or "hard").upper()
+        lines = [f"{label} GATE FAILED. The artifacts on disk do not satisfy the "
                  "following checks. Repair them, then stop again.", ""]
         hints: dict[str, str] = {}
         lesson = self.playbook.retrieve_one(failures)
@@ -406,7 +411,7 @@ class GatedHarness:
                 if round_index == budget - 1:
                     break
 
-                feedback, hints = self._feedback(failures)
+                feedback, hints = self._feedback(failures, discipline)
                 for result in failures:
                     self.playbook.note_pending(result, artifact_path,
                                                hints.get(result.gate_id, result.cause_code))
