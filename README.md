@@ -17,7 +17,7 @@ This harness therefore puts the check outside the decoder.
 
 | Component | Status |
 |---|---|
-| Gate layer (`verify.py`, `gates/`) | **Tested.** 31 hand-worked fixtures; 13 discipline gates and 6 cross-cutting gates, `python -m unittest discover -s tests` |
+| Gate layer (`verify.py`, `gates/`) | **Tested.** 31 gate fixtures, 47 tests in total; 13 discipline gates and 6 cross-cutting gates, `python -m unittest discover -s tests` |
 | Deliverable acquisition (`protocol.deliverables_of`, `harness._discover`, `extract.py`) | **Tested.** Absolute paths, folders, `submission.zip`, `.docx`, `.xlsx` — the shapes `eval/dev_set.yaml` actually uses |
 | Repair loop, playbook admission, telemetry | **Tested.** 5 loop tests with a scripted client |
 | `submission.yaml`, repo layout, strict-pass semantics | Matches the published competition contract |
@@ -154,6 +154,8 @@ winning Submission*, with the resource requirements described.
 | Dev evaluation | `uv run python eval/run.py ../ple-harness` |
 | Contract checks | `uv run python -m kit check` and `uv run python -m kit artifacts` |
 | Tests | `python -m unittest discover -s tests` — 47 tests, no network |
+| Writeup fields | `python scripts/check_writeup.py` — title/subtitle limits and description drift |
+| CI | `.github/workflows/tests.yml` runs the two commands above on every push, plus `tests/e2e_local.py` |
 
 Environment variables consumed: `PORT`, `MODEL_API`, `MODEL_NAME`,
 `MODEL_BASE_URL`, `MODEL_API_KEY`, plus `MAX_FIX_ROUNDS`, `PLAYBOOK_PATH`,

@@ -192,10 +192,10 @@ round budget are there to bound.
 
 ## 4. Efficiency & Scaling (20 pts)
 
-A score-versus-cost curve needs the dev run. The measured datapoint we have is the
-kit smoke task: 5 protocol requests (reads, not model calls), 128 input /
-16 output tokens, 1 second, one
-gate round. That is a plumbing measurement, not a performance claim.
+A score-versus-cost curve needs the dev run. The measured datapoint we have is
+the kit smoke task: 5 protocol requests (reads, not model calls), 128 input / 16
+output tokens, 1 second, one gate round. That is a plumbing measurement, not a
+performance claim.
 
 The design bounds cost in three places rather than by hoping: repairs are
 round-budgeted rather than token-budgeted; exactly one lesson is injected per
