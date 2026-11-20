@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import shlex
 import time
-from typing import Any
+from typing import Any, Callable
 
 from extract import archive_members, text_of
 from mcp import McpClient, tool_alias
@@ -96,8 +96,11 @@ TOOLS: list[dict[str, Any]] = [
 class GatedHarness:
     def __init__(self, client: Client, playbook: Playbook, telemetry: Telemetry,
                  max_fix_rounds: int = 3, max_steps: int = MAX_STEPS_PER_ROUND,
-                 enforce: bool = True) -> None:
+                 enforce: bool = True,
+                 clock: "Callable[[], float] | None" = None) -> None:
         self.client = client
+        # Injectable clock so the time-budget path is testable without waiting.
+        self._clock = clock or time.monotonic
         self.playbook = playbook
         self.telemetry = telemetry
         # Per-task state: MCP tool alias -> (client, real tool name), and the
@@ -344,6 +347,21 @@ class GatedHarness:
         except Exception:
             pass
 
+        # The task frame says how long is left. Protocol section 4 gives only ten
+        # seconds after `cancel`, which is enough to describe a deliverable and
+        # not to write one — so stop early enough to finish.
+        budget_sec: float | None = None
+        try:
+            raw = (task.limits or {}).get("agent_timeout_sec")
+            budget_sec = float(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            budget_sec = None
+        reserve_sec = 0.0
+        deadline: float | None = None
+        if budget_sec and budget_sec > 0:
+            reserve_sec = min(600.0, max(120.0, budget_sec * 0.05))
+            deadline = self._clock() + budget_sec
+
         messages: list[dict] = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": task.instruction},
@@ -352,6 +370,7 @@ class GatedHarness:
         rounds_used = 0
         failures: list[GateResult] = []
         no_gate = False
+        ran_out_of_time = False
         pending_prev: list[GateResult] = []
         deliverables: list[str] = list(deliverables_of(task))
         artifact_path = deliverables[0] if deliverables else ""
@@ -363,6 +382,14 @@ class GatedHarness:
         budget = (self.max_fix_rounds + 1) if self.enforce else 1
         try:
             for round_index in range(budget):
+                if deadline is not None:
+                    remaining = deadline - self._clock()
+                    if remaining <= reserve_sec:
+                        ran_out_of_time = True
+                        await channel.log(
+                            f"[budget] {remaining:.0f}s left, reserve "
+                            f"{reserve_sec:.0f}s: finalising with what is on disk")
+                        break
                 rounds_used = round_index + 1
                 completion = await self._agent_turn(channel, messages)
                 summary = completion.content.strip()
@@ -431,7 +458,10 @@ class GatedHarness:
             error="" if passed else f"{len(failures)} hard gate(s) unresolved",
         )
 
-        if passed:
+        if ran_out_of_time:
+            verdict = (f"[gated] stopped on the time budget after {rounds_used} "
+                       f"round(s); gates were not re-run after the stop.")
+        elif passed:
             verdict = f"[gated] all hard gates passed in {rounds_used} round(s)."
         elif no_gate:
             verdict = (f"[gated] no gate applies to discipline {discipline!r}: "

@@ -196,5 +196,55 @@ class TestGatedLoop(unittest.TestCase):
         self.assertEqual(len(channel.usage_frames), 2)  # one agent turn, no repair
 
 
+class FakeClock:
+    """Monotonic stand-in: returns each value in turn, then repeats the last."""
+
+    def __init__(self, values: list[float]) -> None:
+        self.values = list(values)
+
+    def __call__(self) -> float:
+        return self.values.pop(0) if len(self.values) > 1 else self.values[0]
+
+
+class TestTimeBudget(unittest.TestCase):
+    def test_stops_before_the_reserve_is_spent(self):
+        """A failing task must not repair itself past the deadline.
+
+        Protocol section 4 leaves ten seconds after `cancel`, which is enough to
+        describe a deliverable and not enough to write one. With a 3600 s budget
+        the reserve is 180 s, so a run that has 100 s left must stop repairing.
+        """
+        tmp = tempfile.mkdtemp()
+        client = ScriptedClient([write_call("memo.md", memo(400)), stop()])
+        harness = GatedHarness(
+            client, Playbook(Path(tmp) / "playbook.jsonl"),
+            Telemetry(tmp, run_index=0, run_id="budget"),
+            max_fix_rounds=3, clock=FakeClock([0.0, 0.0, 3500.0, 3500.0]))
+        channel = FakeChannel()
+        task = Task(instruction="Size the beam and write memo.md with the flexure check.",
+                    workdir="/app", session="T-BUDGET",
+                    limits={"agent_timeout_sec": 3600})
+
+        passed, summary = asyncio.run(harness.run(channel, task))
+
+        self.assertFalse(passed)
+        self.assertEqual(client.calls, 2, "a repair round ran past the reserve")
+        self.assertTrue(any("[budget]" in line for line in channel.logs), channel.logs)
+        self.assertTrue(any("time budget" in line for line in channel.logs), channel.logs)
+
+    def test_untimed_task_is_unaffected(self):
+        tmp = tempfile.mkdtemp()
+        client = ScriptedClient([write_call("memo.md", memo(300)), stop()])
+        harness = GatedHarness(client, Playbook(Path(tmp) / "playbook.jsonl"),
+                               Telemetry(tmp, run_index=0, run_id="untimed"),
+                               max_fix_rounds=3, clock=FakeClock([0.0, 10_000.0]))
+        channel = FakeChannel()
+        task = Task(instruction="Size the beam and write memo.md with the flexure check.",
+                    workdir="/app", session="T-UNTIMED")
+
+        passed, _ = asyncio.run(harness.run(channel, task))
+        self.assertTrue(passed, "an untimed task must not be cut short")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

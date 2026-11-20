@@ -235,6 +235,14 @@ the kit smoke task: 5 protocol requests (reads, not model calls), 128 input / 16
 output tokens, 1 second, one gate round. That is a plumbing measurement, not a
 performance claim.
 
+The six-hour limit is enforced rather than hoped for. The harness reads
+`agent_timeout_sec` from the task frame, reserves 5% of it (capped at ten
+minutes, floored at two), and stops repairing while that reserve is still
+intact — so the last thing it does is finalise a deliverable, not truncate one.
+Protocol section 4 allows ten seconds after `cancel`, enough to describe a
+deliverable and not enough to produce one. Two tests pin this, including that a
+task with no time limit is never cut short.
+
 The design bounds cost in three places rather than by hoping: repairs are
 round-budgeted rather than token-budgeted; exactly one lesson is injected per
 round, so the context does not grow into a transcript of everything that ever
@@ -250,7 +258,7 @@ At the SHA above:
 ```bash
 uv run python -m kit check ../ple-harness      # submission.yaml, files, build, model, listen, smoke
 uv run python -m kit artifacts ../ple-harness  # artifact rules, no Docker needed
-python -m unittest discover -s tests           # 74 tests, no network
+python -m unittest discover -s tests           # 76 tests, no network
 python tests/test_fidelity.py                  # per-gate matrix: valid case vs perturbation
 python tests/e2e_local.py                      # gate reject → repair → pass over a real WebSocket
 ```
@@ -263,7 +271,7 @@ tools and calls one, with JSON and server-sent-event replies both parsed, so a
 task's app servers are reachable as model tools rather than only through the
 shell. The eighth stage, `artifacts`, warns because the dev set has not been run,
 so `kit artifacts` does not pass yet and this writeup does not claim it does.
-The 74 tests and the end-to-end WebSocket test pass with no network.
+The 76 tests and the end-to-end WebSocket test pass with no network.
 
 ---
 

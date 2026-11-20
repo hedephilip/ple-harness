@@ -17,7 +17,7 @@ This harness therefore puts the check outside the decoder.
 
 | Component | Status |
 |---|---|
-| Gate layer (`verify.py`, `gates/`) | **Tested.** 31 gate fixtures, a fidelity matrix and 11 request-shape tests, 74 tests in total; 13 discipline gates and 6 cross-cutting gates, `python -m unittest discover -s tests` |
+| Gate layer (`verify.py`, `gates/`) | **Tested.** 31 gate fixtures, a fidelity matrix, 11 request-shape tests and a time-budget guard, 76 tests in total; 13 discipline gates and 6 cross-cutting gates, `python -m unittest discover -s tests` |
 | Deliverable acquisition (`protocol.deliverables_of`, `harness._discover`, `extract.py`) | **Tested.** Absolute paths, folders, `submission.zip`, `.docx`, `.xlsx` — the shapes `eval/dev_set.yaml` actually uses |
 | Repair loop, playbook admission, telemetry | **Tested.** 5 loop tests with a scripted client |
 | `submission.yaml`, repo layout, strict-pass semantics | Matches the published competition contract |
@@ -84,7 +84,7 @@ governing value.
 ## Running
 
 ```bash
-python -m unittest discover -s tests -v      # 74 tests, no network, no deps
+python -m unittest discover -s tests -v      # 76 tests, no network, no deps
 python tests/e2e_local.py                    # spawns serve.py, needs websockets only
 PORT=8080 MODEL_API=google-cloud/glm-5.2 python serve.py
 ```
@@ -153,7 +153,7 @@ winning Submission*, with the resource requirements described.
 | Model access | injected by the evaluator proxy via `MODEL_BASE_URL` / `MODEL_API_KEY` |
 | Dev evaluation | `uv run python eval/run.py ../ple-harness` |
 | Contract checks | `uv run python -m kit check` and `uv run python -m kit artifacts` |
-| Tests | `python -m unittest discover -s tests` — 74 tests, no network |
+| Tests | `python -m unittest discover -s tests` — 76 tests, no network |
 | Gate fidelity | `python tests/test_fidelity.py` — every gate driven by a valid case and a perturbation |
 | Writeup fields | `python scripts/check_writeup.py` — title/subtitle limits and description drift |
 | CI | `.github/workflows/tests.yml` runs the two commands above on every push, plus `tests/e2e_local.py` |
