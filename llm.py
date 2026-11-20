@@ -29,7 +29,10 @@ from typing import Any
 class ProviderProfile:
     name: str
     tool_stream: bool = False
-    temperature: float = 0.0
+    # None means "do not send the field". docs/models.md: Claude Opus 5.5
+    # returns 400 if temperature, top_p, top_k or a thinking budget is set, so
+    # the field must be absent rather than defaulted.
+    temperature: float | None = None
     notes: str = ""
 
 
@@ -83,10 +86,11 @@ class Client:
                  max_tokens: int) -> dict[str, Any]:
         body: dict[str, Any] = {
             "model": self.model_name,
-            "messages": messages,
-            "temperature": self.profile.temperature,
+            "messages": self._marked(messages),
             "max_tokens": max_tokens,
         }
+        if self.profile.temperature is not None:
+            body["temperature"] = self.profile.temperature
         if tools:
             body["tools"] = tools
             body["tool_choice"] = "auto"
@@ -95,8 +99,37 @@ class Client:
             body["tool_stream"] = True     # some gateways read the top-level key
         return body
 
+    def _marked(self, messages: list[dict]) -> list[dict]:
+        """Put Claude's cache breakpoints where they actually help.
+
+        Claude only caches at explicit `cache_control` points, so without these
+        every turn re-processes the whole conversation — expensive and slow on a
+        six-hour task. Mark the system prompt and the newest conversational
+        message; tool messages are left as plain strings because their content
+        must stay a string on the OpenAI-compatible shim.
+        """
+        if self.profile.name != "claude" or not messages:
+            return messages
+        cache = {"type": "ephemeral"}
+        out = [dict(m) for m in messages]
+
+        def mark(index: int) -> None:
+            message = out[index]
+            content = message.get("content")
+            if message.get("role") == "tool" or not isinstance(content, str) or not content:
+                return
+            message["content"] = [{"type": "text", "text": content,
+                                   "cache_control": cache}]
+
+        mark(0)
+        for index in range(len(out) - 1, 0, -1):
+            if out[index].get("role") in ("user", "assistant"):
+                mark(index)
+                break
+        return out
+
     def complete(self, messages: list[dict], tools: list[dict] | None = None,
-                 max_tokens: int = 8192, retries: int = 2) -> Completion:
+                 max_tokens: int = 32000, retries: int = 3) -> Completion:
         if not self.base_url:
             raise LLMError("MODEL_BASE_URL is not set")
         url = f"{self.base_url}/chat/completions"
@@ -136,6 +169,10 @@ class Client:
                 last = LLMError(f"HTTP {exc.code}: {body}")
                 if exc.code in (400, 401, 403, 404):   # not transient
                     break
+                retry_after = exc.headers.get("Retry-After") if exc.headers else None
+                if retry_after and retry_after.isdigit():
+                    time.sleep(min(int(retry_after), 30))
+                    continue
             except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
                 last = exc
             time.sleep(min(2 ** attempt, 8))

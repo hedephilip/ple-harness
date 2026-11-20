@@ -95,6 +95,16 @@ Four findings shaped the build, each from a failure we reproduced:
   a gate status into that summary argues against the submission in the one place
   the grader reads. It now goes out as a `log` frame.
 
+- **The model client would have failed every evaluation call.** It attached
+  `temperature` to every request, and `docs/models.md` states that
+  `google-cloud/claude-opus-5-5` returns `400` if `temperature`, `top_p`, `top_k`
+  or a thinking budget is present. The kit's stub accepts any body, so five local
+  checks passed while the entry was unscoreable. The field is now absent unless
+  explicitly configured, `max_tokens` defaults to the recommended 32000, and Claude
+  requests carry the two cache breakpoints it needs — without them every turn
+  re-processes the whole conversation, which across a six-hour task is the
+  difference between affordable and not.
+
 ### 1.1 Failure Breakdown
 
 Figure 1 needs `gates.csv` from a dev run. What is measured instead is gate
@@ -180,6 +190,13 @@ server returns are echoed on every later request. A server that fails to
 initialise is logged and skipped rather than failing the task, because the
 shell still works.
 
+Model calls are shaped per provider rather than generically: no sampling
+parameters are sent to Claude, the system prompt and newest message carry
+`cache_control` breakpoints, `max_tokens` defaults to 32000, `Retry-After` is
+honoured, and 429/5xx responses are retried with backoff while 400 is not — a
+400 that is retried unchanged is a wasted turn. Eleven tests assert the request
+shape, because the stub cannot.
+
 **One dev task against an engineer's workflow — `lv-cable-sizing`.** Its declared
 deliverable is a `submission.zip` under
 `/filesystem/electrical__lv_cable_sizing__blind/output/`. An engineer sizes the
@@ -233,7 +250,7 @@ At the SHA above:
 ```bash
 uv run python -m kit check ../ple-harness      # submission.yaml, files, build, model, listen, smoke
 uv run python -m kit artifacts ../ple-harness  # artifact rules, no Docker needed
-python -m unittest discover -s tests           # 65 tests, no network
+python -m unittest discover -s tests           # 74 tests, no network
 python tests/test_fidelity.py                  # per-gate matrix: valid case vs perturbation
 python tests/e2e_local.py                      # gate reject → repair → pass over a real WebSocket
 ```
@@ -246,7 +263,7 @@ tools and calls one, with JSON and server-sent-event replies both parsed, so a
 task's app servers are reachable as model tools rather than only through the
 shell. The eighth stage, `artifacts`, warns because the dev set has not been run,
 so `kit artifacts` does not pass yet and this writeup does not claim it does.
-The 65 tests and the end-to-end WebSocket test pass with no network.
+The 74 tests and the end-to-end WebSocket test pass with no network.
 
 ---
 
