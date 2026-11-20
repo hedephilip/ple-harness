@@ -83,8 +83,28 @@ jobs:
       - name: Fetch the benchmark
         run: git clone --depth 1 https://github.com/google-research/ple "$RUNNER_TEMP/ple"
 
+      - name: Check dataset access
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "${HF_TOKEN}" ]; then
+            echo "::error::HF_TOKEN is not set. The dataset is gated: accept the terms at"
+            echo "::error::https://huggingface.co/datasets/google/physical-engineerings-last-exam"
+            echo "::error::then add a read token as the repository secret HF_TOKEN."
+            exit 1
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $HF_TOKEN" \
+            https://huggingface.co/api/datasets/google/physical-engineerings-last-exam/tree/main)
+          echo "dataset tree with token: HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::The token cannot read the dataset (HTTP $code). Request access first."
+            exit 1
+          fi
+
       - name: Run the dev tasks
         working-directory: ${{ runner.temp }}/ple
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           uv tool install harbor==0.20.0 --with websockets
           # No --out: the run directory must sit outside the submission, and the
@@ -94,6 +114,16 @@ jobs:
             --tasks "${{ inputs.tasks }}" \
             --trials 1 \
             --attempts 1
+
+      - name: Collect logs
+        if: always()
+        run: |
+          mkdir -p run-logs
+          cp "$HOME/proxy.log" run-logs/ 2>/dev/null || true
+          cp "$HOME/ollama.log" run-logs/ 2>/dev/null || true
+          find "$RUNNER_TEMP/ple/runs" -maxdepth 2 -type f 2>/dev/null | head -50 |
+            while read -r f; do cp "$f" "run-logs/$(basename "$(dirname "$f")")-$(basename "$f")"; done
+          ls -la run-logs
 
       - name: Show what was produced
         if: always()
@@ -108,7 +138,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: run-out
-          path: artifacts
+          path: |
+            artifacts
+            run-logs
           if-no-files-found: warn
 
       - name: Commit artifacts

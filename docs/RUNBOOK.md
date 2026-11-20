@@ -25,9 +25,24 @@ uv tool install harbor==0.20.0 --with websockets
 docker desktop start          # WSL integration must be enabled for the distro
 ```
 
-The dataset (`google/physical-engineerings-last-exam`, `gated=auto`) serves
-anonymously — no `HF_TOKEN` is required for the dev set, which was verified by
-fetching its tree without credentials.
+The dataset (`google/physical-engineerings-last-exam`, `gated=auto`) needs a
+token. Its **metadata** tree answers anonymously, which is easy to mistake for
+open access, but fetching a file returns:
+
+```
+refused the download (GatedRepoError): set HF_TOKEN to a token that can read it
+```
+
+Accept the terms at <https://huggingface.co/datasets/google/physical-engineerings-last-exam>
+while signed in, then create a read token and export it:
+
+```bash
+export HF_TOKEN=hf_...
+```
+
+In GitHub Actions it is the repository secret `HF_TOKEN`; the workflow's first
+step fails with an explicit message when it is absent, rather than after the
+six-minute model download.
 
 ## Mode 1 — validate the repository (seconds, no model)
 
