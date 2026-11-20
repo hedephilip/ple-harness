@@ -87,17 +87,19 @@ jobs:
         working-directory: ${{ runner.temp }}/ple
         run: |
           uv tool install harbor==0.20.0 --with websockets
+          # No --out: the run directory must sit outside the submission, and the
+          # default (runs/<name>-<time> inside the benchmark clone) already does.
+          # Artifacts are exported to $GITHUB_WORKSPACE/artifacts regardless.
           uv run python -m eval.run "$GITHUB_WORKSPACE" \
             --tasks "${{ inputs.tasks }}" \
             --trials 1 \
-            --attempts 1 \
-            --out "$GITHUB_WORKSPACE/run-out"
+            --attempts 1
 
       - name: Show what was produced
         if: always()
         run: |
           echo '--- proxy log tail ---'; tail -20 "$HOME/proxy.log" 2>/dev/null || true
-          echo '--- run-out ---'; ls -la run-out 2>/dev/null || true
+          echo '--- runs ---'; ls -la runs 2>/dev/null | tail -5 || true
           echo '--- artifacts ---'; ls -la artifacts 2>/dev/null || echo 'no artifacts/'
           head -c 1200 artifacts/manifest.json 2>/dev/null || true
 
@@ -106,9 +108,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: run-out
-          path: |
-            run-out
-            artifacts
+          path: artifacts
           if-no-files-found: warn
 
       - name: Commit artifacts
