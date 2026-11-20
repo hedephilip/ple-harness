@@ -130,6 +130,21 @@ class GateRegistry:
             name = getattr(fn, "__name__", "unnamed_gate")
             try:
                 out = fn(ctx)
+            except KeyError as exc:
+                # A discipline gate reads its inputs out of the claims block with
+                # `float(data["Fy_ksi"])`. When the block is absent or incomplete
+                # that raises KeyError, which is the model failing to state an
+                # input — not the gate being broken. Reporting it as GATE_ERROR
+                # hid an actionable message behind "KeyError: 'Fy_ksi'" and made
+                # every absent deliverable look like a harness fault. Name the
+                # field instead so the repair round can fix it.
+                #
+                # Only KeyError is remapped. A ValueError can be a gate's own
+                # arithmetic going wrong, and that must keep failing as
+                # GATE_ERROR rather than being excused as a missing input.
+                results.append(fail(name, "MISSING_INPUT",
+                                    _missing_input_detail(exc)))
+                continue
             except Exception as exc:  # a broken gate must never pass silently
                 results.append(fail(name, "GATE_ERROR", f"{type(exc).__name__}: {exc}"))
                 continue
@@ -155,6 +170,12 @@ class GateRegistry:
 
 
 GATES = GateRegistry()
+
+
+def _missing_input_detail(exc: BaseException) -> str:
+    """Name the field a gate could not read, so the repair round can act on it."""
+    field = str(exc).strip("'\"")
+    return f"claims block does not state `{field}`"
 
 
 # --------------------------------------------------------------------------

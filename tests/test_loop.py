@@ -115,6 +115,55 @@ def stop(text: str = "finished") -> Completion:
     return Completion(content=text, prompt_tokens=50, completion_tokens=20)
 
 
+def read_call(path: str, call_id: str = "r") -> Completion:
+    return Completion(
+        content="", prompt_tokens=100, completion_tokens=10,
+        tool_calls=[{
+            "id": call_id, "type": "function",
+            "function": {"name": "read_file", "arguments": json.dumps({"path": path})},
+        }],
+    )
+
+
+class TestReadLoopGuard(unittest.TestCase):
+    """The dev run spent 123 of 124 tool calls reading and wrote nothing.
+
+    A step budget does not stop a discovery loop: it just runs out. The guard
+    injects exactly one reminder, because a second one only lengthens the
+    context that is already failing to produce a file.
+    """
+
+    def test_one_nudge_after_a_read_only_streak(self):
+        tmp = tempfile.mkdtemp()
+        client = ScriptedClient([read_call("task.md", f"r{i}")
+                                 for i in range(20)] + [
+            write_call("memo.md", memo(300)), stop()])
+        harness = GatedHarness(client, Playbook(Path(tmp) / "playbook.jsonl"),
+                               Telemetry(tmp, run_index=0, run_id="nudge"),
+                               max_fix_rounds=1)
+        channel = FakeChannel()
+        task = Task(instruction="Size the beam and write memo.md.",
+                    workdir="/app", session="T-002")
+        passed, _ = asyncio.run(harness.run(channel, task))
+
+        nudges = [line for line in channel.logs if line.startswith("[nudge]")]
+        self.assertEqual(len(nudges), 1, f"expected exactly one nudge, got {channel.logs}")
+        self.assertTrue(passed, "the guard must not stop the agent writing afterwards")
+
+    def test_no_nudge_when_the_agent_writes_early(self):
+        tmp = tempfile.mkdtemp()
+        client = ScriptedClient([write_call("memo.md", memo(300)), stop()])
+        harness = GatedHarness(client, Playbook(Path(tmp) / "playbook.jsonl"),
+                               Telemetry(tmp, run_index=0, run_id="nowrite"),
+                               max_fix_rounds=1)
+        channel = FakeChannel()
+        task = Task(instruction="Size the beam and write memo.md.",
+                    workdir="/app", session="T-003")
+        asyncio.run(harness.run(channel, task))
+        self.assertFalse([line for line in channel.logs if line.startswith("[nudge]")],
+                         "a prompt writer must not be nagged")
+
+
 class TestGatedLoop(unittest.TestCase):
     def _harness(self, script, max_fix_rounds=3):
         self.tmp = tempfile.mkdtemp()

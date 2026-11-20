@@ -23,6 +23,19 @@ from telemetry import Telemetry
 from verify import GATES, GateResult
 
 MAX_STEPS_PER_ROUND = 40
+# A step budget alone does not stop a discovery loop. The first dev run spent
+# 123 of 124 tool calls on `find`/`read_file` and wrote nothing, then ran out
+# of steps: the budget was consumed, the deliverable never existed. After this
+# many consecutive read-only steps with no write, one reminder is injected
+# saying so. It is a nudge, not a second prompt layer — it fires once per
+# round and never on its own account of what the deliverable should contain.
+READ_ONLY_STREAK_LIMIT = 12
+READ_ONLY_NUDGE = (
+    "You have used {n} tool calls in a row reading and have written nothing. "
+    "Stop reading. Write the deliverable now, at the exact path in the "
+    "instruction, including the PLE-CLAIMS block. A partial file that exists "
+    "scores; a complete plan that was never written scores zero."
+)
 # Delivered artifacts are folders and zip packages, not single files: in
 # eval/dev_set.yaml 14 dev tasks deliver a folder and 12 a submission.zip, so
 # discovery and collection have to walk into both.
@@ -266,6 +279,8 @@ class GatedHarness:
 
     async def _agent_turn(self, channel: TaskChannel,
                           messages: list[dict]) -> Completion:
+        read_streak = 0
+        nudged = False
         for _ in range(self.max_steps):
             if channel.cancelled.is_set():
                 raise TaskCancelled("time is up")
@@ -294,11 +309,22 @@ class GatedHarness:
             if not completion.tool_calls:
                 return completion
             for call in completion.tool_calls:
+                name = (call.get("function") or {}).get("name")
                 messages.append({
                     "role": "tool",
                     "tool_call_id": call.get("id", ""),
                     "content": await self._execute(channel, call),
                 })
+                if name == "write_file":
+                    read_streak = 0
+                elif name in ("read_file", "exec"):
+                    read_streak += 1
+            if read_streak >= READ_ONLY_STREAK_LIMIT and not nudged:
+                nudged = True
+                await channel.log(
+                    f"[nudge] {read_streak} read-only steps with no write")
+                messages.append({"role": "user",
+                                 "content": READ_ONLY_NUDGE.format(n=read_streak)})
         return Completion(content="step budget exhausted")
 
     async def _execute(self, channel: TaskChannel, call: dict) -> str:

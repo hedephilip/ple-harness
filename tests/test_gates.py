@@ -300,6 +300,22 @@ class TestStrictSemantics(unittest.TestCase):
                GateResult(gate_id="aesthetic", passed=False, severity="soft")]
         self.assertTrue(GATES.all_hard_pass(res))
 
+    def test_missing_claims_field_is_not_a_gate_error(self):
+        """An absent input must name the field, not read as a harness fault.
+
+        The dev run reported `GATE_ERROR: KeyError: 'Fy_ksi'` for a task that
+        simply had no claims block. That message is not actionable, and it made
+        a model failure look like a broken gate. It has to arrive as
+        MISSING_INPUT with the field named.
+        """
+        res = GATES.run("structural", {"files": {"memo.md": b"no claims here"},
+                                       "data": {}, "text": "no claims here"})
+        node = [r for r in res if r.gate_id == "flexure"][0]
+        self.assertFalse(node.passed)
+        self.assertEqual(node.cause_code, "MISSING_INPUT")
+        self.assertIn("Fy_ksi", node.detail)
+        self.assertFalse(GATES.all_hard_pass(res))
+
     def test_raising_gate_becomes_hard_failure(self):
         @GATES.register("__boom__")
         def explode(ctx):
