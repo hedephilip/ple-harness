@@ -123,7 +123,13 @@ carried forward:
    (Gemini 3.8 Flash 28.2% → Gemini 4 Argon 43.2%), not at the bottom.
 2. **Shipping `glm-5.2`.** GLM 5.2 scores **25.3%** — roughly the median config
    (25.7%) and half of Opus. Choosing it concedes ~25 points before any harness
-   work. `submission.yaml` is now set to `claude-opus-5-5`.
+   work. `submission.yaml` is set to `llama-4-maverick` **by explicit request**,
+   which is the same trade in the other direction: the paper puts that family
+   below 7%, and the competition requires a mean of at least 0.138, so the
+   declared model forfeits the Pareto frontier unless the harness adds more than
+   seven points. Reverting is one line, and the Overview allows switching
+   `model_api` before committing provided the model behind `artifacts/` is
+   documented.
 3. **"41.3% of deliverables."** It is 41.3% of *deliverable items*.
 
 Also corrected: `s = 0.4p + 0.6·G·O′` is now **verified verbatim** from eq. 1 —
@@ -136,7 +142,7 @@ is not among the eight sponsored models**, so it is not available to us.
 
 | # | Move | Expected delta | Cost |
 |---|---|---|---|
-| 1 | Switch `model_api` to `claude-opus-5-5` | **+25** vs GLM 5.2 | done, one line |
+| 1 | Set `model_api` to a model that can clear 0.138 | up to **+25** vs GLM 5.2 | one line — currently `llama-4-maverick` by request, which is the opposite move |
 | 2 | Raise item-level hard-constraint coverage — gates must check at the same granularity the grader does | +3 to +5 | the real work |
 | 3 | All-or-nothing pre-submission checks (hard clash, every row served) | converts whole-task zeros | low |
 | 4 | Requirements-listing gate: clause + value, every requirement cited | graded directly; nobody builds this | low |
