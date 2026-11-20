@@ -21,6 +21,10 @@ WRITEUP = ROOT / "docs" / "WRITEUP.md"
 DESCRIPTION = ROOT / "docs" / "WRITEUP_DESCRIPTION.md"
 TITLE_MAX = 80
 SUBTITLE_MAX = 140
+# Overview, minimum requirements: "writeup must be 2,000 words or fewer". This
+# was documented but never enforced, so an edit could push the submitted text
+# over the limit and only the Kaggle form would notice.
+WORDS_MAX = 2000
 
 
 def extract_description(text: str) -> str:
@@ -54,6 +58,10 @@ def main() -> int:
     if actual != expected:
         problems.append("WRITEUP_DESCRIPTION.md has drifted from WRITEUP.md; "
                         "re-run the extraction")
+
+    words = len(actual.split())
+    if words > WORDS_MAX:
+        problems.append(f"description is {words} words, limit {WORDS_MAX}")
 
     if "{{" in actual:
         problems.append("description still contains a placeholder token")
