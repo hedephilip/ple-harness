@@ -55,7 +55,7 @@ Paste the block below verbatim, from the `#` heading to the end of §5.
 # Gated Harness: compliance is the floor, not the score
 
 - Repo: https://github.com/hedephilip/ple-harness
-- Commit SHA: `188fc1f17bbd4da32aecfaeb7a0e82fc04161d60` — the tree in which
+- Commit SHA: `4fd8377b691d8a0b65ded713d5f823e2407dbb55` — the tree in which
   the harness code was last changed. Commits after it touch documentation
   only: `git diff --stat 188fc1f HEAD -- '*.py'` is empty.
 - Primary model_api: google-cloud/llama-4-maverick
