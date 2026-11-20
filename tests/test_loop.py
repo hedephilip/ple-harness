@@ -71,6 +71,10 @@ class FakeChannel:
     async def exec(self, command: str, timeout_sec=None) -> ExecResult:
         return ExecResult(output="", exit_code=0)
 
+    async def wait_cancelled(self) -> None:
+        """The real channel resolves on a cancel frame; tests never do."""
+        await asyncio.Event().wait()
+
     async def log(self, text: str) -> None:
         self.logs.append(text)
 
@@ -134,7 +138,7 @@ class TestGatedLoop(unittest.TestCase):
 
         self.assertTrue(passed, summary)
         # final_message belongs to the grader: the agent's words, untouched.
-        self.assertEqual(summary, "finished")
+        self.assertTrue(summary.startswith("finished"))
         self.assertTrue(any("all hard gates passed" in line
                             for line in channel.logs),
                         f"gate verdict must reach the log, got {channel.logs}")
@@ -156,7 +160,8 @@ class TestGatedLoop(unittest.TestCase):
         channel = FakeChannel()
         passed, summary = asyncio.run(harness.run(channel, self._task()))
         self.assertFalse(passed)
-        self.assertEqual(summary, "finished")
+        self.assertTrue(summary.startswith("finished"))
+        self.assertIn("Unverified in this run", summary)
         self.assertTrue(any("hard gate(s) unresolved" in line
                             for line in channel.logs))
         self.assertIsNone(channel.done_summary)   # serve.py sends done, not the harness
@@ -166,7 +171,8 @@ class TestGatedLoop(unittest.TestCase):
         channel = FakeChannel()
         passed, summary = asyncio.run(harness.run(channel, self._task()))
         self.assertFalse(passed)
-        self.assertEqual(summary, "I could not do it")
+        self.assertTrue(summary.startswith("I could not do it"))
+        self.assertIn("Unverified in this run", summary)
         self.assertIn("MISSING_DELIVERABLE", " ".join(channel.logs))
 
     def test_lesson_admitted_only_on_verified_flip(self):

@@ -37,9 +37,10 @@ Four findings shaped the build, each from a failure we reproduced:
   Measured on that task: repair rounds 4 → 1, model calls 5 → 2,
   tokens 320/40 → 128/16.
 - **The verdict was contaminating graded output.** `artifacts.md` exports
-  `final_message.md` per task and 14 of 29 dev tasks are graded with it. Writing
-  a gate status into that summary argues against the submission in the one place
-  the grader reads. It now goes out as a `log` frame.
+  `final_message.md` per task and 14 of 29 dev tasks are graded with it. The gate
+  status goes out as a `log` frame rather than a verdict in the summary, but a run
+  whose own gates failed still names the unverified checks in one line: silence
+  there would let a failure read as a clean success.
 
 - **The model client would have failed every evaluation call.** It attached
   `temperature` to every request, and `docs/models.md` states that
@@ -197,7 +198,7 @@ At the SHA above:
 ```bash
 uv run python -m kit check ../ple-harness      # 8 stages
 uv run python -m kit artifacts ../ple-harness  # no Docker needed
-python -m unittest discover -s tests           # 76 tests, no network
+python -m unittest discover -s tests           # 80 tests, no network
 python tests/test_fidelity.py                  # per-gate matrix: valid case vs perturbation
 python tests/e2e_local.py                      # gate reject → repair → pass over a real WebSocket
 ```
@@ -213,4 +214,4 @@ model is `google-cloud/llama-4-maverick`.
 
 Reference: R. Han et al., *PLE: Physical-Engineering's Last Exam*,
 arXiv:2610.30537, 2026.
-The 76 tests and the end-to-end WebSocket test pass with no network.
+The 80 tests and the end-to-end WebSocket test pass with no network.

@@ -6,6 +6,7 @@ failure rather than papered over.
 """
 from __future__ import annotations
 
+import asyncio
 import shlex
 import time
 from typing import Any, Callable
@@ -16,8 +17,8 @@ from gates import assert_registered
 from gates.cross import claims_of
 from llm import Client, Completion
 from playbook import Playbook
-from protocol import (Task, TaskCancelled, TaskChannel, deliverables_of,
-                      discipline_of)
+from protocol import (ProtocolError, Task, TaskCancelled, TaskChannel,
+                      deliverables_of, discipline_of)
 from telemetry import Telemetry
 from verify import GATES, GateResult
 
@@ -268,7 +269,23 @@ class GatedHarness:
         for _ in range(self.max_steps):
             if channel.cancelled.is_set():
                 raise TaskCancelled("time is up")
-            completion = self.client.complete(messages, tools=self._tools)
+            # The client is synchronous urllib with a long timeout. Run it off
+            # the event loop and race it against `cancel`, otherwise the reader
+            # cannot see the cancel frame and `done` misses the ten-second grace
+            # protocol.md section 4 allows.
+            call = asyncio.create_task(
+                asyncio.to_thread(self.client.complete, messages, self._tools))
+            cancelled = asyncio.create_task(channel.wait_cancelled())
+            try:
+                done, _ = await asyncio.wait(
+                    {call, cancelled}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                pass
+            if cancelled in done:
+                call.cancel()
+                raise TaskCancelled("time is up")
+            cancelled.cancel()
+            completion = call.result()
             self.prompt_tokens += completion.prompt_tokens
             self.completion_tokens += completion.completion_tokens
             await channel.usage(self.client.model_name, completion.prompt_tokens,
@@ -309,7 +326,9 @@ class GatedHarness:
                                                 args.get("content", ""),
                                                 bool(args.get("append", False)))
                 return f"wrote {size} bytes"
-        except TaskCancelled:
+        except (TaskCancelled, ProtocolError):
+            # A closed channel is not a tool error: retrying into a dead socket
+            # would end the task with `done` instead of `error`.
             raise
         except Exception as exc:
             return f"tool error: {type(exc).__name__}: {exc}"
@@ -344,8 +363,11 @@ class GatedHarness:
         # Marker for -newer: only files this run wrote count as deliverables.
         try:
             await channel.exec("touch /tmp/.ple_start")
-        except Exception:
-            pass
+        except TaskCancelled:
+            raise
+        except Exception as exc:
+            await channel.log(f"[acquire] session marker unavailable: {exc}; "
+                              "discovery falls back to prompt paths")
 
         # The task frame says how long is left. Protocol section 4 gives only ten
         # seconds after `cancel`, which is enough to describe a deliverable and
@@ -482,6 +504,13 @@ class GatedHarness:
         # `final_message` is handed to the grader, which reads it alongside the
         # files. It carries the agent's own words only: stamping our internal
         # verdict on it would tell the grader the work failed.
+        if summary and failures:
+            # The summary goes to the grader. Keeping the model's words is right,
+            # but letting a run whose own gates failed read as a clean success is
+            # not: name what did not verify, in one line.
+            codes = ", ".join(sorted({f"{r.gate_id} ({r.cause_code})"
+                                      for r in failures}))
+            summary = f"{summary}\n\nUnverified in this run: {codes}."
         if summary:
             return passed, summary
         return passed, ("Deliverables written and verified." if passed

@@ -144,8 +144,8 @@ class TaskChannel:
             request_id = str(next(_ID_SEQ))
             future = asyncio.get_running_loop().create_future()
             self._pending[request_id] = future
-            await self.ws.send(json.dumps({**frame, "id": request_id}))
             try:
+                await self.ws.send(json.dumps({**frame, "id": request_id}))
                 return await future
             finally:
                 self._pending.pop(request_id, None)
@@ -167,8 +167,12 @@ class TaskChannel:
 
     async def read_file(self, path: str) -> bytes:
         result = await self._request({"type": "read_file", "path": path})
-        if not result.get("ok", True):
+        if not result.get("ok", False):
             raise FileNotFoundError(f"{path}: {result.get('error', 'read failed')}")
+        if result.get("truncated"):
+            # Protocol section 2: a read returns at most 10 MB. Verifying a
+            # truncated artifact would mean judging half a file as whole.
+            raise ValueError(f"{path}: read truncated at the 10 MB cap")
         return base64.b64decode(result.get("content_b64") or "")
 
     async def read_text(self, path: str) -> str:
@@ -213,6 +217,10 @@ class TaskChannel:
             "output_tokens": int(output_tokens),
             "cache_read_tokens": int(cache_read_tokens),
         }))
+
+    async def wait_cancelled(self) -> None:
+        """Resolve when the evaluator sends `cancel`."""
+        await self.cancelled.wait()
 
     async def done(self, final_message: str) -> None:
         await self.ws.send(json.dumps({"type": "done", "final_message": final_message}))

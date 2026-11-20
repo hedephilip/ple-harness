@@ -101,6 +101,8 @@ class McpClient:
         if headers.get("mcp-session-id"):
             self.session_id = headers["mcp-session-id"]
 
+        if reply.get("truncated"):
+            raise McpError(f"http response truncated for {self.url}")
         status = int(reply.get("status", 0) or 0)
         body = base64.b64decode(reply.get("body_b64") or "")
         if status >= 400:

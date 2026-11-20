@@ -77,7 +77,11 @@ class Client:
     def __init__(self, model_api: str | None = None, base_url: str | None = None,
                  api_key: str | None = None, model_name: str | None = None,
                  timeout: float = 600.0) -> None:
-        self.model_api = model_api or os.environ.get("MODEL_API", "")
+        # MODEL_NAME matters when only the served model id is set: without it
+        # the profile falls back to openai-compatible and Claude requests lose
+        # their cache breakpoints entirely.
+        self.model_api = (model_api or os.environ.get("MODEL_API", "")
+                          or os.environ.get("MODEL_NAME", ""))
         self.base_url = (base_url or os.environ.get("MODEL_BASE_URL")
                          or os.environ.get("OPENAI_BASE_URL") or "").rstrip("/")
         self.api_key = (api_key or os.environ.get("MODEL_API_KEY")
@@ -150,7 +154,19 @@ class Client:
             try:
                 with urllib.request.urlopen(request, timeout=self.timeout) as response:
                     data = json.loads(response.read().decode())
-                choice = (data.get("choices") or [{}])[0].get("message") or {}
+                # A gateway can answer 200 with an error envelope or no choices.
+                # Treating that as an empty turn ends the task as if the model had
+                # finished, so it is retried and then raised.
+                if data.get("error"):
+                    last = LLMError(f"provider error: {data['error']}")
+                    time.sleep(min(2 ** attempt, 8))
+                    continue
+                choices = data.get("choices") or []
+                if not choices:
+                    last = LLMError("response contained no choices")
+                    time.sleep(min(2 ** attempt, 8))
+                    continue
+                choice = (choices[0].get("message") or {})
                 calls = []
                 for call in choice.get("tool_calls") or []:
                     function = call.get("function") or {}
@@ -162,6 +178,10 @@ class Client:
                             "arguments": self._coerce_arguments(function.get("arguments")),
                         },
                     })
+                if not (choice.get("content") or calls):
+                    last = LLMError("empty completion: no content and no tool calls")
+                    time.sleep(min(2 ** attempt, 8))
+                    continue
                 usage = data.get("usage") or {}
                 return Completion(
                     content=choice.get("content") or "",
