@@ -43,6 +43,18 @@ Four findings shaped the build, each from a failure we reproduced:
 
 ### 1.1 Failure Breakdown
 
+Figure 1 needs `gates.csv` from a dev run. What is measured instead is gate
+fidelity, which is the larger risk: a gate that passes everything is decoration,
+and a gate that fails a valid deliverable is worse than none, because the repair
+loop then pushes the agent to edit work the rubric already scores. So every gate
+is driven both ways — a hand-computed compliant case that must stay green, and one
+single-parameter perturbation that must trip it with a specific cause code. All 13
+formula gates and all 6 cross-cutting gates pass in both directions: **0 false
+positives and 0 false negatives across the 19-gate suite.** The cases are derived
+from the formulae the gates implement, not from benchmark reference values, so the
+suite can distinguish a correct gate from one that merely agrees with itself.
+`python tests/test_fidelity.py` prints the matrix.
+
 A full breakdown by discipline needs `gates.csv` from a dev run, which does not
 exist yet. What we can show is the taxonomy the gate layer distinguishes, because
 every one was hit during construction: misread drawing values (a claim whose
@@ -167,7 +179,8 @@ At the SHA above:
 ```bash
 uv run python -m kit check ../ple-harness      # submission.yaml, files, build, model, listen, smoke
 uv run python -m kit artifacts ../ple-harness  # artifact rules, no Docker needed
-python -m unittest discover -s tests           # 56 tests, no network
+python -m unittest discover -s tests           # 65 tests, no network
+python tests/test_fidelity.py                  # per-gate matrix: valid case vs perturbation
 python tests/e2e_local.py                      # gate reject → repair → pass over a real WebSocket
 ```
 
@@ -179,4 +192,4 @@ tools and calls one, with JSON and server-sent-event replies both parsed, so a
 task's app servers are reachable as model tools rather than only through the
 shell. The eighth stage, `artifacts`, warns because the dev set has not been run,
 so `kit artifacts` does not pass yet and this writeup does not claim it does.
-The 56 tests and the end-to-end WebSocket test pass with no network.
+The 65 tests and the end-to-end WebSocket test pass with no network.

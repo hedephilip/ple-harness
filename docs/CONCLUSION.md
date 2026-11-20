@@ -35,7 +35,8 @@ uv run python eval/run.py /mnt/c/dev/ple-harness   # then commit artifacts/
 | Deliverables are acquired in the shapes the dev set uses | 10 fixtures in `tests/test_delivery.py`: folder, `submission.zip`, `.docx`, `.xlsx`, absolute `/filesystem` paths |
 | Grader-facing summary is not contaminated | `e2e`: `final_message` = the agent's words; verdict arrives as a `log` frame |
 
-Total: 56 tests, no network.
+Total: 65 tests, no network, including a fidelity matrix that drives every one
+of the 19 gates with a valid case and a single-parameter perturbation.
 
 ## 3. What is not proven
 
