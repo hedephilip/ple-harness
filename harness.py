@@ -11,6 +11,7 @@ import time
 from typing import Any
 
 from extract import archive_members, text_of
+from mcp import McpClient, tool_alias
 from gates import assert_registered
 from gates.cross import claims_of
 from llm import Client, Completion
@@ -99,6 +100,10 @@ class GatedHarness:
         self.client = client
         self.playbook = playbook
         self.telemetry = telemetry
+        # Per-task state: MCP tool alias -> (client, real tool name), and the
+        # tool list actually offered to the model this task.
+        self._mcp: dict[str, tuple[McpClient, str]] = {}
+        self._tools: list[dict[str, Any]] = list(TOOLS)
         self.max_fix_rounds = max_fix_rounds
         self.max_steps = max_steps
         # enforce=False is the ablation arm: gates are evaluated and logged but
@@ -213,12 +218,54 @@ class GatedHarness:
         return ctx
 
     # -- one agent turn ---------------------------------------------------
+    # -- task app servers --------------------------------------------------
+    async def _connect_mcp(self, channel: TaskChannel,
+                           task: Task) -> list[dict[str, Any]]:
+        """Expose the task's MCP tools to the model.
+
+        A server that fails to initialise is logged and skipped: a broken app
+        server must not cost the whole task when the shell still works.
+        """
+        self._mcp = {}
+        specs: list[dict[str, Any]] = []
+        for entry in (task.mcp_servers or [])[:4]:
+            if not isinstance(entry, dict):
+                continue
+            server = str(entry.get("name") or "mcp")
+            url = str(entry.get("url") or "")
+            if not url:
+                continue
+            client = McpClient(channel, server, url)
+            try:
+                await client.initialize()
+                tools = await client.list_tools()
+            except TaskCancelled:
+                raise
+            except Exception as exc:
+                await channel.log(f"[mcp] {server}: unavailable "
+                                  f"({type(exc).__name__}: {exc})")
+                continue
+            added = 0
+            for tool in tools:
+                alias = tool_alias(server, tool.name)
+                if alias in self._mcp:
+                    continue
+                self._mcp[alias] = (client, tool.name)
+                specs.append({"type": "function", "function": {
+                    "name": alias,
+                    "description": (tool.description or f"{tool.name} on {server}")[:1024],
+                    "parameters": tool.schema or {"type": "object", "properties": {}},
+                }})
+                added += 1
+            await channel.log(f"[mcp] {server}: {added} tool(s)")
+        return specs
+
     async def _agent_turn(self, channel: TaskChannel,
                           messages: list[dict]) -> Completion:
         for _ in range(self.max_steps):
             if channel.cancelled.is_set():
                 raise TaskCancelled("time is up")
-            completion = self.client.complete(messages, tools=TOOLS)
+            completion = self.client.complete(messages, tools=self._tools)
             self.prompt_tokens += completion.prompt_tokens
             self.completion_tokens += completion.completion_tokens
             await channel.usage(self.client.model_name, completion.prompt_tokens,
@@ -237,6 +284,14 @@ class GatedHarness:
     async def _execute(self, channel: TaskChannel, call: dict) -> str:
         name = (call.get("function") or {}).get("name")
         args = Client.parse_arguments(call)
+        if name in self._mcp:
+            client, real = self._mcp[name]
+            try:
+                return await client.call_tool(real, args or {})
+            except TaskCancelled:
+                raise
+            except Exception as exc:
+                return f"tool error: {type(exc).__name__}: {exc}"
         try:
             if name == "exec":
                 result = await channel.exec(args.get("command", ""),
@@ -297,6 +352,8 @@ class GatedHarness:
         artifact_path = deliverables[0] if deliverables else ""
         passed = False
         summary = ""
+
+        self._tools = list(TOOLS) + await self._connect_mcp(channel, task)
 
         budget = (self.max_fix_rounds + 1) if self.enforce else 1
         try:

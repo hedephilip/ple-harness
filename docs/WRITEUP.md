@@ -159,6 +159,15 @@ not in prompt text:
    per repair round, admitted only on a verified fail→pass flip for that artifact.
 6. **Bounded repair** — finite rounds, then a hard stop.
 
+Task applications are reached as tools, not as shell commands. When a task
+advertises `mcp_servers`, the harness negotiates `initialize`, lists each
+server's tools and offers them to the model as `mcp__<server>__<tool>`, so a
+spreadsheet, document or mail app is callable directly; replies are parsed as
+either JSON or server-sent events, and the session and protocol version the
+server returns are echoed on every later request. A server that fails to
+initialise is logged and skipped rather than failing the task, because the
+shell still works.
+
 **One dev task against an engineer's workflow — `lv-cable-sizing`.** Its declared
 deliverable is a `submission.zip` under
 `/filesystem/electrical__lv_cable_sizing__blind/output/`. An engineer sizes the
@@ -212,15 +221,18 @@ At the SHA above:
 ```bash
 uv run python -m kit check ../ple-harness      # submission.yaml, files, build, model, listen, smoke
 uv run python -m kit artifacts ../ple-harness  # artifact rules, no Docker needed
-python -m unittest discover -s tests           # 47 tests, no network
+python -m unittest discover -s tests           # 56 tests, no network
 python tests/e2e_local.py                      # gate reject → repair → pass over a real WebSocket
 ```
 
 Stated exactly as it stands: `kit check` passes `submission.yaml`, `files`,
-`build`, `model`, `listen` and `smoke` on this tree. `mcp` warns because the
-harness exposes no MCP client. `artifacts` warns because the dev set has not been
-run, so `kit artifacts` does not pass yet and this writeup does not claim it does.
-The 47 tests and the end-to-end WebSocket test pass with no network.
+`build`, `model`, `listen` and `smoke` on this tree. The harness carries an MCP
+client for the task's Streamable HTTP transport — `initialize`, `tools/list`,
+`tools/call`, with JSON and server-sent-event replies both parsed — so a task's
+app servers are reachable as model tools rather than only through the shell.
+`artifacts` warns because the dev set has not been run, so `kit artifacts` does
+not pass yet and this writeup does not claim it does.
+The 56 tests and the end-to-end WebSocket test pass with no network.
 
 ---
 

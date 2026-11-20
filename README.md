@@ -17,7 +17,7 @@ This harness therefore puts the check outside the decoder.
 
 | Component | Status |
 |---|---|
-| Gate layer (`verify.py`, `gates/`) | **Tested.** 31 gate fixtures, 47 tests in total; 13 discipline gates and 6 cross-cutting gates, `python -m unittest discover -s tests` |
+| Gate layer (`verify.py`, `gates/`) | **Tested.** 31 gate fixtures, 56 tests in total; 13 discipline gates and 6 cross-cutting gates, `python -m unittest discover -s tests` |
 | Deliverable acquisition (`protocol.deliverables_of`, `harness._discover`, `extract.py`) | **Tested.** Absolute paths, folders, `submission.zip`, `.docx`, `.xlsx` — the shapes `eval/dev_set.yaml` actually uses |
 | Repair loop, playbook admission, telemetry | **Tested.** 5 loop tests with a scripted client |
 | `submission.yaml`, repo layout, strict-pass semantics | Matches the published competition contract |
@@ -84,7 +84,7 @@ governing value.
 ## Running
 
 ```bash
-python -m unittest discover -s tests -v      # 47 tests, no network, no deps
+python -m unittest discover -s tests -v      # 56 tests, no network, no deps
 python tests/e2e_local.py                    # spawns serve.py, needs websockets only
 PORT=8080 MODEL_API=google-cloud/glm-5.2 python serve.py
 ```
@@ -115,7 +115,7 @@ than a claim the numbers do not support.
 
 ## Known gaps
 
-- **Two staged gaps, measured.** `kit check` on this tree passes `submission.yaml`, `files`, `build`, `model`, `listen` and `smoke` (bundle 110 MiB, image built in ~100 s, websocket accepted 2 s after start, smoke task one gate round with a clean `final_message`). It warns on `mcp` — no MCP client, so task app servers are reachable through the shell only — and on `artifacts`, which do not exist until the dev set is run. `ready: false`, `unready: "artifacts"`.
+- **Two staged gaps, measured.** `kit check` on this tree passes `submission.yaml`, `files`, `build`, `model`, `listen` and `smoke` (bundle 110 MiB, image built in ~100 s, websocket accepted 2 s after start, smoke task one gate round with a clean `final_message`). It carries an MCP client for the task's Streamable HTTP transport (`initialize`, `tools/list`, `tools/call`, JSON or SSE replies), so app servers are reachable without shelling into the container. It warns on `artifacts`, which do not exist until the dev set is run. `ready: false`, `unready: "artifacts"`.
 - Deliverable paths are parsed from `instruction` text, because the protocol carries none. Heuristic — validate on the dev set before trusting the contract gate.
 - Gates cover the four disciplines' core checks, not every clause in every code.
 - Gate coverage is unequal across disciplines, and the split of the 56 hidden tasks is not published, so effort is allocated by the published 85-task benchmark instead: mechanical 30, electrical 27, civil 18, structural 10. Mechanical and electrical are therefore the largest missing returns; structural, with three formula gates, is the best covered.
@@ -153,7 +153,7 @@ winning Submission*, with the resource requirements described.
 | Model access | injected by the evaluator proxy via `MODEL_BASE_URL` / `MODEL_API_KEY` |
 | Dev evaluation | `uv run python eval/run.py ../ple-harness` |
 | Contract checks | `uv run python -m kit check` and `uv run python -m kit artifacts` |
-| Tests | `python -m unittest discover -s tests` — 47 tests, no network |
+| Tests | `python -m unittest discover -s tests` — 56 tests, no network |
 | Writeup fields | `python scripts/check_writeup.py` — title/subtitle limits and description drift |
 | CI | `.github/workflows/tests.yml` runs the two commands above on every push, plus `tests/e2e_local.py` |
 
