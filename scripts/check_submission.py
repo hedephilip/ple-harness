@@ -177,6 +177,16 @@ def check_writeup() -> None:
     add("PASS" if "github.com/hedephilip/ple-harness" in text else "FAIL",
         "repository URL in the writeup")
 
+    # "Coverage of all 5 Stage 1 rubric criteria" is a minimum requirement, so the
+    # headings have to name the criteria as the rubric names them.
+    rubric = ["Insight & Failure Analysis", "Engineering Reasoning",
+              "Cross-Model Generalizability", "Efficiency & Scaling",
+              "Clarity & Visuals"]
+    missing = [name for name in rubric if name not in text]
+    add("PASS" if not missing else "FAIL",
+        "writeup covers the 5 rubric criteria",
+        "all five headings present" if not missing else f"missing {missing}")
+
     # Three figures are required: architecture, score-vs-cost, failure breakdown.
     figures = {
         "architecture diagram": r"(?i)architecture",
@@ -187,9 +197,17 @@ def check_writeup() -> None:
         add("PASS" if re.search(pattern, text) else "FAIL",
             f"writeup references the {label}")
 
-    drawn = list((ROOT / "docs" / "figures").glob("*.png")) if (ROOT / "docs" / "figures").is_dir() else []
-    add("PASS" if len(drawn) >= 3 else "WARN", "three figure images exist",
-        f"{len(drawn)} in docs/figures: " + ", ".join(p.name for p in drawn))
+    # Counted by name, not by number: two stray plots are not the three figures
+    # the Overview names.
+    required = {
+        "architecture diagram": "architecture.png",
+        "score-vs-cost plot": "figure3_score_cost.png",
+        "failure breakdown": "figure1_failures.png",
+    }
+    figures_dir = ROOT / "docs" / "figures"
+    for label, filename in required.items():
+        exists = (figures_dir / filename).is_file()
+        add("PASS" if exists else "FAIL", f"figure file for the {label}", filename)
 
 
 def main() -> int:

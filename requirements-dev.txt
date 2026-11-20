@@ -1,0 +1,3 @@
+# Dev-machine only. Deliberately not in requirements.txt: the submission image
+# installs exactly that file, and figure drawing must not grow the container.
+matplotlib>=3.8

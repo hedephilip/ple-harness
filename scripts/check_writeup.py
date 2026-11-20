@@ -57,8 +57,11 @@ def main() -> int:
 
     if "{{" in actual:
         problems.append("description still contains a placeholder token")
-    for heading in ("## 1. Insights", "## 2. Architecture", "## 3. Cross-Model",
-                    "## 4. Efficiency", "## 5. Reproducibility"):
+    # The Overview's Stage 1 rubric, by name: coverage of all five is a minimum
+    # requirement, so the headings must say what the rubric says.
+    for heading in ("## 1. Insight & Failure Analysis", "## 2. Engineering Reasoning",
+                    "## 3. Cross-Model Generalizability", "## 4. Efficiency & Scaling",
+                    "## 5. Clarity & Visuals"):
         if heading not in actual:
             problems.append(f"description is missing {heading!r}")
 

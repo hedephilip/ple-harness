@@ -64,7 +64,7 @@ Paste the block below verbatim, from the `#` heading to the end of §5.
 - Dev score (29 tasks): not measured. `artifacts/` has not been generated, so no
   dev score, cost per task or minutes per task can be reported
 
-## 1. Insights & Failures (25 pts)
+## 1. Insight & Failure Analysis (25 pts)
 
 The scoring rule, not the model, set the design. Per `rules.md`, a
 constraint-and-objective task scores each deliverable item as
@@ -115,10 +115,7 @@ case that must stay green, and one single-parameter perturbation that must trip 
 with a specific cause code. All 13 formula gates and all 6 cross-cutting gates pass
 in both directions: **0 false positives, 0 false negatives across the 19-gate
 suite.** The cases derive from the formulae, not from benchmark values, so the
-suite can tell a correct gate from one that agrees with itself. `python
-tests/test_fidelity.py` prints the matrix, including the taxonomy the layer
-separates: misread callout, wrong clause, unit mismatch, non-convergence,
-rounding, early stop.
+suite can tell a correct gate from one that agrees with itself. `python tests/test_fidelity.py` prints the matrix.
 
 ### 1.2 Ablations
 
@@ -150,7 +147,11 @@ before the agent runs, is enough."* It gates an empty folder and fails every che
 vacuously; discovery has to follow each turn, because the files only exist after
 the agent writes them.
 
-## 2. Architecture & Reasoning (25 pts)
+## 2. Engineering Reasoning (25 pts)
+
+Figure 2 (`docs/figures/architecture.png`) is the control loop: the protocol
+WebSocket, the agent turn, the re-read of artifacts from disk, the gate
+registry, bounded repair and the MCP tool path.
 
 `serve.py` holds a protocol-v1 WebSocket (`ping_interval=None`, one reader, 8
 concurrent requests, always a `done` or `error` at the end). `harness.py` runs one
@@ -216,7 +217,7 @@ round budget are there to bound.
 
 ## 4. Efficiency & Scaling (20 pts)
 
-A score-versus-cost curve needs the dev run. The measured datapoint we have is
+Figure 3, score versus cost, needs the dev run and is therefore not drawn. The measured datapoint we have is
 the kit smoke task: 5 protocol requests (reads, not model calls), 128 input / 16
 output tokens, 1 second, one gate round. That is a plumbing measurement, not a
 performance claim.
@@ -241,13 +242,15 @@ an unpriced loop usually hides. Token usage is reported per model call through
 `usage` frames, so the cost column is measured rather than estimated once the run
 exists.
 
-## 5. Reproducibility (15 pts)
+## 5. Clarity & Visuals (15 pts)
+
+### 5.1 Reproducibility
 
 At the SHA above:
 
 ```bash
-uv run python -m kit check ../ple-harness      # submission.yaml, files, build, model, listen, smoke
-uv run python -m kit artifacts ../ple-harness  # artifact rules, no Docker needed
+uv run python -m kit check ../ple-harness      # 8 stages
+uv run python -m kit artifacts ../ple-harness  # no Docker needed
 python -m unittest discover -s tests           # 76 tests, no network
 python tests/test_fidelity.py                  # per-gate matrix: valid case vs perturbation
 python tests/e2e_local.py                      # gate reject → repair → pass over a real WebSocket
@@ -258,6 +261,9 @@ python tests/e2e_local.py                      # gate reject → repair → pass
 app-server path end to end (9 requests, 192 in / 24 out tokens). The eighth,
 `artifacts`, warns because the dev set has not been run; `kit artifacts` does not
 pass and this writeup does not claim it does.
+
+No dev scores were generated, so no judge model applies; the declared Stage 2
+model is `google-cloud/llama-4-maverick`.
 
 Reference: R. Han et al., *PLE: Physical-Engineering's Last Exam*,
 arXiv:2610.30537, 2026.
