@@ -53,27 +53,18 @@ Four findings shaped the build, each from a failure we reproduced:
 
 ### 1.1 Failure Breakdown
 
-Figure 1 needs `gates.csv` from a dev run. What is measured instead is gate
-fidelity, which is the larger risk: a gate that passes everything is decoration,
-and a gate that fails a valid deliverable is worse than none, because the repair
-loop then pushes the agent to edit work the rubric already scores. So every gate
-is driven both ways — a hand-computed compliant case that must stay green, and one
-single-parameter perturbation that must trip it with a specific cause code. All 13
-formula gates and all 6 cross-cutting gates pass in both directions: **0 false
-positives and 0 false negatives across the 19-gate suite.** The cases are derived
-from the formulae the gates implement, not from benchmark reference values, so the
-suite can distinguish a correct gate from one that merely agrees with itself.
-`python tests/test_fidelity.py` prints the matrix.
-
-A full breakdown by discipline needs `gates.csv` from a dev run, which does not
-exist yet. What we can show is the taxonomy the gate layer distinguishes, because
-every one was hit during construction: misread drawing values (a claim whose
-number disagrees with the recomputation), code-clause errors (a clause named but
-not satisfied), unit mismatches (a value with no declared unit, or two documents
-disagreeing), solver non-convergence (Colebrook–White failing to reach residual
-<1e-9), rounding errors (a takeoff that rounds down), and early stops (a task that
-ends with no readable deliverable). Each is a distinct `cause_code`, so a repair
-lesson never crosses from one to another.
+Figure 1 (failures by discipline and type) needs `gates.csv` from a dev run. That
+run has not been made, so the figure is not drawn and no estimate is substituted
+for it. What is measured instead is the failure that costs most: a gate firing on
+a valid deliverable. Every gate is driven both ways — a hand-computed compliant
+case that must stay green, and one single-parameter perturbation that must trip it
+with a specific cause code. All 13 formula gates and all 6 cross-cutting gates pass
+in both directions: **0 false positives, 0 false negatives across the 19-gate
+suite.** The cases derive from the formulae, not from benchmark values, so the
+suite can tell a correct gate from one that agrees with itself. `python
+tests/test_fidelity.py` prints the matrix, including the taxonomy the layer
+separates: misread callout, wrong clause, unit mismatch, non-convergence,
+rounding, early stop.
 
 ### 1.2 Ablations
 
@@ -127,21 +118,16 @@ not in prompt text:
    per repair round, admitted only on a verified fail→pass flip for that artifact.
 6. **Bounded repair** — finite rounds, then a hard stop.
 
-Task applications are reached as tools, not as shell commands. When a task
-advertises `mcp_servers`, the harness negotiates `initialize`, lists each
-server's tools and offers them to the model as `mcp__<server>__<tool>`, so a
-spreadsheet, document or mail app is callable directly; replies are parsed as
-either JSON or server-sent events, and the session and protocol version the
-server returns are echoed on every later request. A server that fails to
-initialise is logged and skipped rather than failing the task, because the
-shell still works.
+Task applications are reached as tools, not shell commands: when a task
+advertises `mcp_servers` the harness negotiates `initialize`, lists each server's
+tools and offers them as `mcp__<server>__<tool>`, parsing JSON or server-sent
+events and echoing the returned session and protocol version. A server that fails
+to initialise is logged and skipped, because the shell still works.
 
-Model calls are shaped per provider rather than generically: no sampling
-parameters are sent to Claude, the system prompt and newest message carry
-`cache_control` breakpoints, `max_tokens` defaults to 32000, `Retry-After` is
-honoured, and 429/5xx responses are retried with backoff while 400 is not — a
-400 that is retried unchanged is a wasted turn. Eleven tests assert the request
-shape, because the stub cannot.
+Model calls are shaped per provider: no sampling parameters reach Claude, the
+system prompt and newest message carry `cache_control` breakpoints, `max_tokens`
+defaults to 32000, and 429/5xx are retried while 400 is not — a 400 retried
+unchanged is a wasted turn. Eleven tests assert the shape; the stub cannot.
 
 **One dev task against an engineer's workflow — `lv-cable-sizing`.** Its declared
 deliverable is a `submission.zip` under
@@ -209,12 +195,12 @@ python tests/test_fidelity.py                  # per-gate matrix: valid case vs 
 python tests/e2e_local.py                      # gate reject → repair → pass over a real WebSocket
 ```
 
-Stated exactly as it stands: `kit check` passes seven of its eight stages on
-this tree — `submission.yaml`, `files`, `build`, `model`, `listen`, `smoke` and
-`mcp`. The `mcp` stage exercises the app-server path end to end (9 requests,
-192 in / 24 out tokens): the harness negotiates `initialize`, lists the server's
-tools and calls one, with JSON and server-sent-event replies both parsed, so a
-task's app servers are reachable as model tools rather than only through the
-shell. The eighth stage, `artifacts`, warns because the dev set has not been run,
-so `kit artifacts` does not pass yet and this writeup does not claim it does.
+`kit check` passes seven of its eight stages on this tree: `submission.yaml`,
+`files`, `build`, `model`, `listen`, `smoke` and `mcp`, the last exercising the
+app-server path end to end (9 requests, 192 in / 24 out tokens). The eighth,
+`artifacts`, warns because the dev set has not been run; `kit artifacts` does not
+pass and this writeup does not claim it does.
+
+Reference: R. Han et al., *PLE: Physical-Engineering's Last Exam*,
+arXiv:2610.30537, 2026.
 The 76 tests and the end-to-end WebSocket test pass with no network.

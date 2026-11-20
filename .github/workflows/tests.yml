@@ -33,3 +33,10 @@ jobs:
 
       - name: Writeup field limits and description drift
         run: python scripts/check_writeup.py
+
+      # Stage 1 minimum requirements. Informational while artifacts/ is
+      # absent: the repository cannot satisfy that row until the dev set has
+      # been run, and a permanently red build would hide new failures.
+      - name: Submission readiness (informational)
+        continue-on-error: true
+        run: python scripts/check_submission.py

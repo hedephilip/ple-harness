@@ -162,4 +162,22 @@ Environment variables consumed: `PORT`, `MODEL_API`, `MODEL_NAME`,
 `MODEL_BASE_URL`, `MODEL_API_KEY`, plus `MAX_FIX_ROUNDS`, `PLAYBOOK_PATH`,
 `TELEMETRY_DIR`, `PLE_GATE_MODE`.
 
+## Citing PLE
 
+This harness is built for the PLE benchmark. If you use it in research, cite the
+benchmark as the competition's Acknowledgements request:
+
+```bibtex
+@misc{han2026ple,
+  title         = {{PLE}: Physical-Engineering's Last Exam},
+  author        = {Rujun Han and Yufan Zhuang and Arijit Ray and Han Yu and
+                   Zhongying CuiZhu and George Lee and Yifei Ming and Binz Roy and
+                   Varun Sakalkar and Vishy Tirumalashetty and Burak Gokturk and
+                   Tomas Pfister and Chen-Yu Lee},
+  year          = {2026},
+  eprint        = {2610.30537},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  url           = {https://arxiv.org/abs/2610.30537}
+}
+```

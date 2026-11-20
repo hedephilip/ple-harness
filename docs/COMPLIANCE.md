@@ -136,6 +136,25 @@ hard prerequisite for submitting.
 
 ---
 
+## Stage 1 minimum requirements
+
+Read from the competition Overview page. These are eligibility gates: an entry that
+misses one is not judged at all, so they outrank any scoring consideration.
+
+| Requirement (Overview wording) | Our state |
+|---|---|
+| "Submit one Kaggle Writeup (not to exceed 2,000 words)" | description is 1,875 words; `scripts/check_writeup.py` enforces the cap |
+| "3 figures: (1) an architecture diagram, (2) a score-vs-cost plot, (3) a failure breakdown on the 29 dev tasks" | architecture drawn; the other two require `artifacts/`, so they are not drawn and no estimate is substituted |
+| "a Media Gallery cover image" | `docs/figures/card.png`, 560x280 |
+| "Your GitHub repo URL under Project Links and 40-character commit SHA at the top" | both present in the writeup |
+| Commit must include `submission.yaml`, `serve.py`, `harness.py`, an Apache-2.0 or MIT LICENSE, and unpacked `artifacts/` | all present except `artifacts/` |
+| "pass kit check and kit artifacts" | `kit check` passes 7 of 8 stages; `kit artifacts` cannot pass without artifacts |
+| Model must be one of the 8 `google-cloud/*` ids | `google-cloud/claude-opus-5-5` |
+| If an open-weight or custom judge produced the dev scores, say which | no dev scores yet; nothing to disclose beyond the declared submission model |
+
+`python scripts/check_submission.py` prints this as a pass/fail table and exits
+non-zero while any row fails.
+
 ## 8. One unresolved contradiction between two official documents
 
 The Kaggle overview says:
