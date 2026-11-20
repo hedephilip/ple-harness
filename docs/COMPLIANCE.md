@@ -149,7 +149,7 @@ misses one is not judged at all, so they outrank any scoring consideration.
 | "Your GitHub repo URL under Project Links and 40-character commit SHA at the top" | both present in the writeup |
 | Commit must include `submission.yaml`, `serve.py`, `harness.py`, an Apache-2.0 or MIT LICENSE, and unpacked `artifacts/` | all present except `artifacts/` |
 | "pass kit check and kit artifacts" | `kit check` passes 7 of 8 stages; `kit artifacts` cannot pass without artifacts |
-| Model must be one of the 8 `google-cloud/*` ids | `google-cloud/claude-opus-5-5` |
+| Model must be one of the 8 `google-cloud/*` ids | `google-cloud/llama-4-maverick` — declared by request; the paper places this family below 7% and the prize floor is 0.138, so the declared model alone forfeits the frontier unless the harness adds more than seven points |
 | If an open-weight or custom judge produced the dev scores, say which | no dev scores yet; nothing to disclose beyond the declared submission model |
 
 `python scripts/check_submission.py` prints this as a pass/fail table and exits

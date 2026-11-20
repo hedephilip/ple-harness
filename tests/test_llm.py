@@ -69,9 +69,13 @@ class TestRequestShape(unittest.TestCase):
              {"role": "user", "content": "hi"}], None, 32000)
         self.assertIsInstance(body["messages"][0]["content"], str)
 
-    def test_max_tokens_default_is_generous(self):
-        default = inspect.signature(Client.complete).parameters["max_tokens"].default
-        self.assertEqual(default, 32000, "models.md recommends 32000 for Opus 5.5")
+    def test_max_tokens_follows_the_profile(self):
+        # models.md recommends 32000 for Opus 5.5; the Overview warns that
+        # open-weight models have lower context limits, so they get 4096.
+        self.assertIsNone(inspect.signature(Client.complete).parameters["max_tokens"].default)
+        self.assertEqual(client(CLAUDE).profile.default_max_tokens, 32000)
+        self.assertEqual(client("google-cloud/llama-4-maverick").profile.default_max_tokens, 4096)
+        self.assertEqual(client("google-cloud/gpt-oss-120b").profile.default_max_tokens, 4096)
 
     def test_tool_choice_is_auto(self):
         tools = [{"type": "function", "function": {"name": "f", "parameters": {}}}]

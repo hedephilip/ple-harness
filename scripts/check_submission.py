@@ -129,9 +129,50 @@ def check_writeup() -> None:
     add("PASS" if words <= WORD_LIMIT else "FAIL",
         f"writeup under {WORD_LIMIT} words", f"{words} words")
 
+    # Presence and shape are not enough: the string has to name a commit that
+    # exists in this repository and is reachable from HEAD, otherwise it points
+    # at nothing a judge can check out.
     sha = re.search(r"\b[0-9a-f]{40}\b", text)
-    add("PASS" if sha else "FAIL", "40-character commit SHA at the top",
-        sha.group(0)[:12] + "..." if sha else "no 40-hex string")
+    if not sha:
+        add("FAIL", "40-character commit SHA at the top", "no 40-hex string")
+    else:
+        value = sha.group(0)
+        try:
+            exists = subprocess.run(["git", "cat-file", "-e", value + "^{commit}"],
+                                    cwd=ROOT, capture_output=True, timeout=20).returncode == 0
+            ancestor = exists and subprocess.run(
+                ["git", "merge-base", "--is-ancestor", value, "HEAD"],
+                cwd=ROOT, capture_output=True, timeout=20).returncode == 0
+            head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+                                  capture_output=True, text=True, timeout=20).stdout.strip()
+        except (OSError, subprocess.SubprocessError) as exc:
+            add("WARN", "40-character commit SHA at the top", str(exc))
+            return
+        if not exists:
+            add("FAIL", "SHA names a commit in this repository", value[:12])
+        elif not ancestor:
+            add("FAIL", "SHA is reachable from HEAD", value[:12])
+        elif value == head:
+            add("PASS", "SHA pins the submitted code", "it is HEAD")
+        else:
+            # A commit cannot contain its own hash, so the writeup is always
+            # committed after the snapshot it names. What must hold is that
+            # nothing runtime changed in between: then the pin still describes
+            # the submitted code, and only documentation followed it.
+            try:
+                changed = subprocess.run(
+                    ["git", "diff", "--name-only", value, head, "--", "*.py"],
+                    cwd=ROOT, capture_output=True, text=True, timeout=20
+                ).stdout.strip()
+            except (OSError, subprocess.SubprocessError) as exc:
+                add("WARN", "SHA pins the submitted code", str(exc))
+                return
+            if changed:
+                add("FAIL", "SHA pins the submitted code",
+                    f"code changed after {value[:12]}: {changed.splitlines()[:3]}")
+            else:
+                add("PASS", "SHA pins the submitted code",
+                    f"{value[:12]}; commits after it are documentation only")
 
     add("PASS" if "github.com/hedephilip/ple-harness" in text else "FAIL",
         "repository URL in the writeup")

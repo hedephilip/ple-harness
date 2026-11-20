@@ -29,6 +29,9 @@ from typing import Any
 class ProviderProfile:
     name: str
     tool_stream: bool = False
+    # The Overview warns that open-weight models have lower context limits, so
+    # the output ceiling follows the profile instead of being one global number.
+    default_max_tokens: int = 32000
     # None means "do not send the field". docs/models.md: Claude Opus 5.5
     # returns 400 if temperature, top_p, top_k or a thinking budget is set, so
     # the field must be absent rather than defaulted.
@@ -46,7 +49,8 @@ def profile_for(model_api: str) -> ProviderProfile:
     if "claude" in key:
         return ProviderProfile("claude", notes="OpenAI-compatible shim over native endpoint")
     if "gemma" in key or "gpt-oss" in key or "llama" in key:
-        return ProviderProfile("open-weight", notes="open weights; no tool_stream needed")
+        return ProviderProfile("open-weight", default_max_tokens=4096,
+                            notes="open weights; lower context limits")
     return ProviderProfile("openai-compatible")
 
 
@@ -129,10 +133,12 @@ class Client:
         return out
 
     def complete(self, messages: list[dict], tools: list[dict] | None = None,
-                 max_tokens: int = 32000, retries: int = 3) -> Completion:
+                 max_tokens: int | None = None, retries: int = 3) -> Completion:
         if not self.base_url:
             raise LLMError("MODEL_BASE_URL is not set")
         url = f"{self.base_url}/chat/completions"
+        if max_tokens is None:
+            max_tokens = self.profile.default_max_tokens
         payload = json.dumps(self._payload(messages, tools, max_tokens)).encode()
         headers = {"Content-Type": "application/json"}
         if self.api_key:

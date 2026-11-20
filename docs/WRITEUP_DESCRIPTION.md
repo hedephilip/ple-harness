@@ -4,7 +4,7 @@
 - Commit SHA: `188fc1f17bbd4da32aecfaeb7a0e82fc04161d60` — the tree in which
   the harness code was last changed. Commits after it touch documentation
   only: `git diff --stat 188fc1f HEAD -- '*.py'` is empty.
-- Primary model_api: google-cloud/claude-opus-5-5
+- Primary model_api: google-cloud/llama-4-maverick
 - Other models tested: none yet — the second model run is not done, so §3 reports
   design intent rather than a measured comparison
 - Dev score (29 tasks): not measured. `artifacts/` has not been generated, so no
@@ -151,7 +151,7 @@ specific, because gates read files rather than messages.
 
 | model_api | Baseline | Yours | Delta | Tokens in/out/cached | $/task |
 |:-|:-:|:-:|:-:|:-:|:-:|
-| google-cloud/claude-opus-5-5 | not run | not run | — | — | — |
+| google-cloud/llama-4-maverick | not run | not run | — | — | — |
 | google-cloud/gemini-4-argon | not run | not run | — | — | — |
 
 What we expect to hold across models, and why: acquisition, gating and the
@@ -174,6 +174,10 @@ intact — so the last thing it does is finalise a deliverable, not truncate one
 Protocol section 4 allows ten seconds after `cancel`, enough to describe a
 deliverable and not enough to produce one. Two tests pin this, including that a
 task with no time limit is never cut short.
+
+Declaring an open-weight model puts this entry at the cheap end of the cost
+axis and, per the paper, in the weakest performance band, so the score has to
+come from the gate layer or not at all.
 
 The design bounds cost in three places rather than by hoping: repairs are
 round-budgeted rather than token-budgeted; exactly one lesson is injected per
