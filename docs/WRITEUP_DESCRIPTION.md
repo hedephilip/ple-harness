@@ -110,22 +110,22 @@ registry, bounded repair and the MCP tool path.
 `serve.py` holds a protocol-v1 WebSocket (`ping_interval=None`, one reader, 8
 concurrent requests, always a `done` or `error` at the end). `harness.py` runs one
 agent turn, executes the model's tool calls as protocol requests, then re-reads
-the artifacts and runs the gate registry. Six invariants are enforced in code,
-not in prompt text:
+the artifacts and runs the gate registry. Seven invariants are enforced in code:
 
 1. **Authority separation** — the judge never reads the model's summary.
 2. **Re-derivation** — every deliverable is re-opened and its text extracted
    (folders enumerated, zips opened in-process, `.docx`/`.xlsx` parsed as zip+XML
-   with the standard library, so the build keeps one dependency) before any check
-   runs.
+   with the standard library) before any check runs.
 3. **Strict pass** — `all_hard_pass([])` is `False`; a gate that raises becomes a
    hard failure, never a silent success.
 4. **Signed failure** — `(gate_id, cause_code, observed, limit, unit)` plus a
-   stable signature, so two failures of equal magnitude but different cause never
-   share a lesson.
-5. **Conditional memory** — lessons live outside the context window, at most one
-   per repair round, admitted only on a verified fail→pass flip for that artifact.
+   stable signature, so different causes never share a lesson.
+5. **Conditional memory** — lessons live outside context, at most one per repair
+   round, admitted only on a verified fail→pass flip.
 6. **Bounded repair** — finite rounds, then a hard stop.
+7. **Two-phase descent** — Phase 1 secures compliance ($G=1$). Once cleared,
+   remaining rounds run Phase 2 (objective descent for $O'$) with automatic
+   rollback to the verified compliant checkpoint if a hard constraint breaks.
 
 Task applications are reached as tools, not shell commands: when a task
 advertises `mcp_servers` the harness negotiates `initialize`, lists each server's
@@ -204,7 +204,7 @@ At the SHA above:
 ```bash
 uv run python -m kit check ../ple-harness      # 8 stages
 uv run python -m kit artifacts ../ple-harness  # no Docker needed
-python -m unittest discover -s tests           # 84 tests, no network
+python -m unittest discover -s tests           # 86 tests, no network
 python tests/test_fidelity.py                  # per-gate matrix: valid case vs perturbation
 python tests/e2e_local.py                      # gate reject → repair → pass over a real WebSocket
 ```

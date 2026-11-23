@@ -48,8 +48,10 @@ async def handle(websocket, *_args) -> None:
         await channel.start()
 
         enrich = os.environ.get("PLE_GATE_MODE", "on").strip().lower() != "off"
+        descent = os.environ.get("PLE_OBJECTIVE_DESCENT", "on").strip().lower() != "off"
         harness = GatedHarness(Client(), Playbook(), Telemetry(),
-                               max_fix_rounds=MAX_FIX_ROUNDS, enforce=enrich)
+                               max_fix_rounds=MAX_FIX_ROUNDS, enforce=enrich,
+                               optimize_descent=descent)
         passed, message = await harness.run(channel, task)
         LOG.info("task %s passed=%s", session, passed)
         await channel.done(message)

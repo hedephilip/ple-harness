@@ -110,7 +110,7 @@ TOOLS: list[dict[str, Any]] = [
 class GatedHarness:
     def __init__(self, client: Client, playbook: Playbook, telemetry: Telemetry,
                  max_fix_rounds: int = 3, max_steps: int = MAX_STEPS_PER_ROUND,
-                 enforce: bool = True,
+                 enforce: bool = True, optimize_descent: bool = True,
                  clock: "Callable[[], float] | None" = None) -> None:
         self.client = client
         # Injectable clock so the time-budget path is testable without waiting.
@@ -126,6 +126,7 @@ class GatedHarness:
         # enforce=False is the ablation arm: gates are evaluated and logged but
         # never block completion and never trigger a repair round.
         self.enforce = enforce
+        self.optimize_descent = optimize_descent
         self.prompt_tokens = 0
         self.completion_tokens = 0
 
@@ -427,6 +428,9 @@ class GatedHarness:
         artifact_path = deliverables[0] if deliverables else ""
         passed = False
         summary = ""
+        optimized = False
+        checkpoint_ctx: dict[str, Any] = {}
+        checkpoint_summary = ""
 
         self._tools = list(TOOLS) + await self._connect_mcp(channel, task)
 
@@ -477,6 +481,45 @@ class GatedHarness:
                 if GATES.all_hard_pass(results):
                     failures = []
                     passed = True
+                    if optimized:
+                        if not summary or summary == "exhausted":
+                            summary = checkpoint_summary
+                        break
+                    # Objective descent: if budget remains and we haven't optimized yet,
+                    # save a verified compliant checkpoint and prompt the agent to minimize
+                    # cost/weight/loss while strictly maintaining compliance.
+                    if self.enforce and self.optimize_descent and not optimized and round_index < budget - 1:
+                        optimized = True
+                        checkpoint_ctx = dict(ctx)
+                        checkpoint_summary = summary
+                        await channel.log(
+                            f"[gated] hard gates passed (G=1) in round {round_index + 1}; "
+                            "running objective descent to optimize cost/weight/efficiency")
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "All hard engineering constraints are verified and satisfied (G=1). "
+                                "Now perform an objective descent pass to maximize O': refine sizing, "
+                                "section properties, or material takeoff to minimize cost, weight, or "
+                                "loss while strictly preserving all hard code constraints and keeping "
+                                "the PLE-CLAIMS block updated."
+                            ),
+                        })
+                        continue
+                    break
+
+                # If an optimization round broke hard constraints, rollback to the verified
+                # compliant checkpoint so G=1 is never forfeited for unverified gains.
+                if optimized and not GATES.all_hard_pass(results):
+                    await channel.log(
+                        "[gated] objective descent broke a hard constraint; rolling back "
+                        "to verified compliant checkpoint (G=1)")
+                    for path, content in (checkpoint_ctx.get("files") or {}).items():
+                        if isinstance(content, bytes):
+                            await channel.write_file(path, content.decode("utf-8", "replace"))
+                    passed = True
+                    failures = []
+                    summary = checkpoint_summary
                     break
 
                 failures = GATES.hard_failures(results)

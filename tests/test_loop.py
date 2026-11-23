@@ -165,13 +165,14 @@ class TestReadLoopGuard(unittest.TestCase):
 
 
 class TestGatedLoop(unittest.TestCase):
-    def _harness(self, script, max_fix_rounds=3):
+    def _harness(self, script, max_fix_rounds=3, optimize_descent=False):
         self.tmp = tempfile.mkdtemp()
         client = ScriptedClient(script)
         playbook = Playbook(Path(self.tmp) / "playbook.jsonl")
         telemetry = Telemetry(self.tmp, run_index=0, run_id="test")
         return GatedHarness(client, playbook, telemetry,
-                            max_fix_rounds=max_fix_rounds), playbook
+                            max_fix_rounds=max_fix_rounds,
+                            optimize_descent=optimize_descent), playbook
 
     def _task(self) -> Task:
         return Task(instruction="Size the beam and write memo.md with the flexure check.",
@@ -337,6 +338,53 @@ class TestRepairPlateau(unittest.TestCase):
 
         self.assertTrue(passed, "a changing failure set should still be repairable")
         self.assertFalse(any("no progress" in line for line in channel.logs), channel.logs)
+
+
+class TestObjectiveDescent(unittest.TestCase):
+    """Once hard gates clear (G=1), the harness allocates remaining budget to optimize O'.
+
+    If the optimization pass preserves hard constraints, the optimized deliverable
+    is kept. If an over-aggressive optimization violates a hard gate, the harness
+    automatically rolls back to the compliant checkpoint so G=1 is never lost.
+    """
+
+    def test_objective_descent_preserves_improved_deliverable(self):
+        tmp = tempfile.mkdtemp()
+        client = ScriptedClient([
+            write_call("memo.md", memo(350)), stop("compliant"),    # round 1: G=1 passes
+            write_call("memo.md", memo(250)), stop("optimized"),    # round 2: O' optimized & passes
+        ])
+        harness = GatedHarness(client, Playbook(Path(tmp) / "playbook.jsonl"),
+                               Telemetry(tmp, run_index=0, run_id="opt-pass"),
+                               max_fix_rounds=3)
+        channel = FakeChannel()
+        task = Task(instruction="Size the beam and write memo.md with the flexure check.",
+                    workdir="/app", session="T-OPT-PASS")
+
+        passed, summary = asyncio.run(harness.run(channel, task))
+        self.assertTrue(passed)
+        self.assertEqual(summary, "optimized")
+        self.assertTrue(any("objective descent" in line for line in channel.logs))
+        self.assertIn("250", channel.files["memo.md"].decode())
+
+    def test_objective_descent_rolls_back_if_constraint_broken(self):
+        tmp = tempfile.mkdtemp()
+        client = ScriptedClient([
+            write_call("memo.md", memo(300)), stop("compliant"),    # round 1: G=1 passes (300 <= 375)
+            write_call("memo.md", memo(420)), stop("broken"),       # round 2: over-optimized, fails flexure (420 > 375)
+        ])
+        harness = GatedHarness(client, Playbook(Path(tmp) / "playbook.jsonl"),
+                               Telemetry(tmp, run_index=0, run_id="opt-fail"),
+                               max_fix_rounds=3)
+        channel = FakeChannel()
+        task = Task(instruction="Size the beam and write memo.md with the flexure check.",
+                    workdir="/app", session="T-OPT-FAIL")
+
+        passed, summary = asyncio.run(harness.run(channel, task))
+        self.assertTrue(passed, "must protect G=1 by falling back to compliant checkpoint")
+        self.assertEqual(summary, "compliant")
+        self.assertTrue(any("rolling back" in line for line in channel.logs))
+        self.assertIn("300", channel.files["memo.md"].decode(), "channel file must be restored to compliant state")
 
 
 if __name__ == "__main__":
