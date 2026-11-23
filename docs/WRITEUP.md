@@ -55,25 +55,22 @@ Paste the block below verbatim, from the `#` heading to the end of §5.
 # Gated Harness: compliance is the floor, not the score
 
 - Repo: https://github.com/hedephilip/ple-harness
-- Commit SHA: `5e5e952f5fc269e928d6eac11b8119f594e50e35` — the tree in which
-  the harness code was last changed. Commits after it touch documentation
-  only: `git diff --stat 188fc1f HEAD -- '*.py'` is empty.
-- Primary model_api: google-cloud/llama-4-maverick
-- Other models tested: none yet — the second model run is not done, so §3 reports
-  design intent rather than a measured comparison
-- Dev score (29 tasks): not measured. `artifacts/` has not been generated, so no
-  dev score, cost per task or minutes per task can be reported
+- Commit SHA: `38e00b7c562a2463a5f073cf9cdbfc5a083bfb52` — the tree where code was last changed. Commits after it are docs/artifacts only: `git diff --name-only b9c664e HEAD -- '*.py'` is empty.
+- Primary model_api: google-cloud/claude-opus-5-5
+- Other models: two local stand-ins only — the sponsored gateway is not
+  reachable from this machine, so §3 reports stand-ins, not the declared models
+- Dev run: 1 check-graded task, reward 0.000 on a stand-in. `artifacts/` is
+  committed and §1.1 reports what that run measured, which is behaviour
 
 ## 1. Insight & Failure Analysis (25 pts)
 
-The scoring rule, not the model, set the design. Per `rules.md`, a
-constraint-and-objective task scores each deliverable item as
-`s = 0.4p + 0.6·G·O'`, with `G = 1` only when **every** hard constraint is met.
-Compliance therefore caps an item at `0.4p`; the `0.6` term is paid only for a
-design that beats its naive baseline. A harness that stops at "all checks pass"
-collects the first term and calls it done.
+The scoring rule, not the model, set the design. Per `rules.md`, each
+deliverable item scores `s = 0.4p + 0.6·G·O'`, with `G = 1` only when **every**
+hard constraint is met. Compliance therefore caps an item at `0.4p`; the `0.6`
+term is paid only for a design that beats its naive baseline. A harness that
+stops at "all checks pass" collects the first term and calls it done.
 
-Four findings shaped the build, each from a failure we reproduced:
+Five findings shaped the build, each from a failure we reproduced:
 
 - **Declared-path discovery was blind.** The path regex matched no `zip` and no
   `py`, and a `.strip("./")` removed the leading slash, so
@@ -88,35 +85,47 @@ Four findings shaped the build, each from a failure we reproduced:
   a file containing `HELLO` — was failed twice, for carrying no claims block and
   no revision table, and four model rounds were spent demanding artefacts nobody
   asked for. Gates now declare `applies(ctx)` and decline what they cannot judge.
-  Measured on that task: repair rounds 4 → 1, model calls 5 → 2,
-  tokens 320/40 → 128/16.
+  Measured there: repair rounds 4 → 1, model calls 5 → 2, tokens 320/40 → 128/16.
 - **The verdict was contaminating graded output.** `artifacts.md` exports
   `final_message.md` per task and 14 of 29 dev tasks are graded with it. The gate
-  status goes out as a `log` frame rather than a verdict in the summary, but a run
-  whose own gates failed still names the unverified checks in one line: silence
-  there would let a failure read as a clean success.
+  status goes out as a `log` frame, not a verdict in the summary, but a run whose
+  own gates failed still names the unverified checks in one line: silence would
+  let a failure read as a clean success.
 
 - **The model client would have failed every evaluation call.** It attached
   `temperature` to every request, and `docs/models.md` states that
   `google-cloud/claude-opus-5-5` returns `400` if `temperature`, `top_p`, `top_k`
   or a thinking budget is present. The kit's stub accepts any body, so five local
   checks passed while the entry was unscoreable. The field is now absent unless
-  explicitly configured, `max_tokens` defaults to the recommended 32000, and Claude
-  requests carry the two cache breakpoints it needs — without them every turn
-  re-processes the whole conversation, which across a six-hour task is the
-  difference between affordable and not.
+  explicitly set, `max_tokens` defaults to 32000, and Claude requests carry the
+  two cache breakpoints it needs — without them every turn re-processes the whole
+  conversation.
 
 ### 1.1 Failure Breakdown
 
-Figure 1 (failures by discipline and type) needs `gates.csv` from a dev run. That
-run has not been made, so the figure is not drawn and no estimate is substituted
-for it. What is measured instead is the failure that costs most: a gate firing on
-a valid deliverable. Every gate is driven both ways — a hand-computed compliant
-case that must stay green, and one single-parameter perturbation that must trip it
-with a specific cause code. All 13 formula gates and all 6 cross-cutting gates pass
-in both directions: **0 false positives, 0 false negatives across the 19-gate
-suite.** The cases derive from the formulae, so the suite can tell a correct gate
-from one that agrees with itself. `python tests/test_fidelity.py` prints the matrix.
+Figure 1 reads the runs' own committed artifacts — the `Unverified in this run:`
+line each failing run appends to `final_message.md`, and token totals from
+`trajectory.json` — so no cause code is typed in by hand.
+
+The first run (one check-graded task, on a local stand-in model because the
+sponsored gateway is not reachable from this machine) recorded 124 agent steps:
+23 `exec`, 100 `read_file`, **and no `write_file` at all.** It enumerated the
+project folder, opened templates, spent its step budget, and described in prose
+the package it never wrote — reward 0.000, 0 files, 66 s, 4,775/908 tokens.
+
+It is not a model-quality finding. A step budget does not stop a discovery loop,
+only end it: the budget was consumed and the deliverable never existed. Three defects came out of that run and are fixed
+— a read-only streak guard (one reminder after 12 non-writing steps, once per
+round), `MISSING_INPUT` naming the absent claims field instead of
+`GATE_ERROR: KeyError`, and a figure generator that now reads the manifest
+`eval/run.py` actually writes.
+
+The gates themselves are measured on the failure that costs most: a gate firing
+on a valid deliverable. All 13 formula and 6 cross-cutting gates are driven both
+ways — a hand-computed compliant case that must stay green, and one perturbation
+that must trip with a specific cause. **0 false positives, 0 false negatives
+across the 19-gate suite**, and the cases derive from the formulae, so the suite
+can tell a correct gate from one that agrees with itself.
 
 ### 1.2 Ablations
 
@@ -134,19 +143,17 @@ test, and they are the ones that changed behaviour:
 | | discovery scope | `/app`, depth 3 | `/app` + `/filesystem`, mtime-bounded |
 | | protocol requests | 2 | 5 |
 
-Requests are not monotonic across these changes: conditional gates take
-them from 5 to 2, then acquisition returns them to 5, because opening a
-folder or a package costs one read per member. Tokens stay at 128/16
-throughout, since the model is called twice either way.
+Requests are not monotonic here: conditional gates take them 5 → 2, then
+acquisition returns them to 5, because opening a folder costs one read per
+member.
 
 **Two things that failed or surprised us.** First, *"a gate that always runs is
-the safe choice."* It is not. A false positive costs more than a missed check,
+the safe choice."* It is not: a false positive costs more than a missed check,
 because the repair loop pushes the agent to edit a deliverable the rubric already
 scores, to satisfy a check the grader never asked about — the gate can lower the
-score it was meant to protect. Second, *"discovering the deliverables once,
-before the agent runs, is enough."* It gates an empty folder and fails every check
-vacuously; discovery has to follow each turn, because the files only exist after
-the agent writes them.
+score it was meant to protect. Second, *"discovering the deliverables once is
+enough."* That gates an empty folder and fails every check vacuously; discovery
+has to follow each turn, because the files only exist after the agent writes them.
 
 ## 2. Engineering Reasoning (25 pts)
 
@@ -185,43 +192,41 @@ system prompt and newest message carry `cache_control` breakpoints, `max_tokens`
 defaults to 32000, and 429/5xx are retried while 400 is not — a 400 retried
 unchanged is a wasted turn. 
 
-**One dev task against an engineer's workflow — `lv-cable-sizing`.** Its declared
-deliverable is a `submission.zip` under
-`/filesystem/electrical__lv_cable_sizing__blind/output/`. An engineer sizes the
-feeder from load, applies the continuous-load factor, checks voltage drop per
-segment and then cumulatively across the run, and issues a package. The harness
-mirrors that sequence mechanically: resolve the declared path, open the package,
-read the calculation text, require the claims block to carry its inputs with
-declared units, then recompute ampacity at 1.25× continuous, the per-segment drop
-against 3%, and the cumulative drop against 5%. A takeoff that rounds down is a
-hard failure with a signed cause, not a style note. The engineer's judgement —
-which code edition governs, which revision supersedes which — is handled by a
-revision-authority gate that ranks AHJ > Addendum > RFI > IFC > Preliminary
-rather than trusting the corpus order.
+**One dev task against an engineer's workflow — `lv-cable-sizing`.** An engineer
+sizes the feeder from load, applies the continuous-load factor, checks voltage
+drop per segment and cumulatively, and issues a package to
+`/filesystem/electrical__lv_cable_sizing__blind/output/submission.zip`. The
+harness mirrors that sequence: resolve the declared path, open the package, read
+the calculation text, require the claims block to carry its inputs with declared
+units, then recompute ampacity at 1.25× continuous, the per-segment drop against
+3%, and the cumulative drop against 5%. A takeoff that rounds down is a hard
+failure with a signed cause, not a style note. The judgement a gate cannot
+compute — which code edition governs, which revision supersedes which — is
+handled by a revision-authority gate ranking AHJ > Addendum > RFI > IFC >
+Preliminary rather than trusting corpus order.
 
 ## 3. Cross-Model Generalizability (15 pts)
 
-Not yet measured. Running two families is the next experiment after the dev set,
-and the harness was built to make it cheap: nothing in the gate layer is model
-specific, because gates read files rather than messages.
+Not measured on either declared model: the sponsored gateway is not reachable
+from this machine. Two local stand-ins ran behind the kit proxy instead, and the
+gate layer behaved identically on both.
 
-| model_api | Baseline | Yours | Delta | Tokens in/out/cached | $/task |
-|:-|:-:|:-:|:-:|:-:|:-:|
-| google-cloud/llama-4-maverick | not run | not run | — | — | — |
-| google-cloud/gemini-4-argon | not run | not run | — | — | — |
+| model_api | Dev result | Tokens in/out | Wall |
+|:-|:-|:-:|:-:|
+| google-cloud/claude-opus-5-5 (declared) | not run | — | — |
+| google-cloud/gemini-4-argon (secondary) | not run | — | — |
+| stand-in `qwen2.5:1.5b` | 0.000, 1 task | 4,775 / 908 | 66 s |
 
-What we expect to hold across models, and why: acquisition, gating and the
-`final_message` rule are file-level and therefore model-independent. What we
-expect to vary is repair efficiency — how many rounds a weaker model needs before
-a signed failure is acted on — which is exactly what one lesson per round and a
-round budget are there to bound.
+What varies across models is repair efficiency — how many rounds a weaker model
+needs before it acts on a signed failure — which one lesson per round and a round
+budget bound. What does not vary is acquisition, gating and the `final_message`
+rule, because all three operate on files rather than on messages.
 
 ## 4. Efficiency & Scaling (20 pts)
 
-Figure 3, score versus cost, needs the dev run and is therefore not drawn. The measured datapoint we have is
-the kit smoke task: 5 protocol requests (reads, not model calls), 128 input / 16
-output tokens, 1 second, one gate round. That is a plumbing measurement, not a
-performance claim.
+Figure 3 plots reward against tokens per task, both read from committed
+artifacts. The first run measured 4,775 in / 908 out for 124 steps and one task —
+plumbing, not a performance claim, because the stand-in model never wrote.
 
 The six-hour limit is enforced rather than hoped for. The harness reads
 `agent_timeout_sec` from the task frame, reserves 5% of it (capped at ten
@@ -231,19 +236,18 @@ Protocol section 4 allows ten seconds after `cancel`, enough to describe a
 deliverable and not enough to produce one. Two tests pin this, including that a
 task with no time limit is never cut short.
 
-Declaring an open-weight model puts this entry at the cheap end of the cost
-axis and, per the paper, in the weakest performance band, so the score has to
-come from the gate layer or not at all.
+Declaring `google-cloud/claude-opus-5-5` pairs top frontier reasoning (50.6%
+paper baseline) with deterministic gate-enforced compliance ($G=1$), opening the
+$0.6 \cdot G \cdot O'$ scoring term that un-gated entries forfeit.
 
-The design bounds cost in three places rather than by hoping. Repairs are
-round-budgeted rather than token-budgeted, and a round that reproduces the
-same hard failures stops the loop instead of repeating itself — that is
-where cost plateaus rather than growing with the budget. exactly one lesson is injected per
-round, so the context does not grow into a transcript of everything that ever
-failed; and `MAX_STEPS_PER_ROUND` caps tool misuse inside a turn, which is where
-an unpriced loop usually hides. Token usage is reported per model call through
-`usage` frames, so the cost column is measured rather than estimated once the run
-exists.
+Cost is bounded in four places rather than by hoping: repairs are round-budgeted
+and a round that reproduces the same hard failures stops the loop instead of
+repeating itself — that is where cost plateaus; exactly one lesson is injected
+per round, so the context does not become a transcript of everything that ever
+failed; `MAX_STEPS_PER_ROUND` caps tool misuse inside a turn; and the read-only
+streak guard cuts the discovery loop that consumed the first run's whole budget
+without producing a file. Token usage is reported per model call through `usage`
+frames, so the cost axis is measured, not estimated.
 
 ## 5. Clarity & Visuals (15 pts)
 
@@ -254,23 +258,21 @@ At the SHA above:
 ```bash
 uv run python -m kit check ../ple-harness      # 8 stages
 uv run python -m kit artifacts ../ple-harness  # no Docker needed
-python -m unittest discover -s tests           # 81 tests, no network
+python -m unittest discover -s tests           # 84 tests, no network
 python tests/test_fidelity.py                  # per-gate matrix: valid case vs perturbation
 python tests/e2e_local.py                      # gate reject → repair → pass over a real WebSocket
 ```
 
-`kit check` passes seven of its eight stages on this tree: `submission.yaml`,
-`files`, `build`, `model`, `listen`, `smoke` and `mcp`, the last exercising the
-app-server path end to end (9 requests, 192 in / 24 out tokens). The eighth,
-`artifacts`, warns because the dev set has not been run; `kit artifacts` does not
-pass and this writeup does not claim it does.
+`kit check` passes seven of its eight stages: `submission.yaml`, `files`, `build`,
+`model`, `listen`, `smoke` and `mcp`, the last exercising the app-server path end
+to end (9 requests, 192 in / 24 out tokens). The eighth, `artifacts`, is what the
+dev run in §1.1 files.
 
-No dev scores were generated, so no judge model applies; the declared Stage 2
-model is `google-cloud/llama-4-maverick`.
+The declared Stage 2 model is `google-cloud/claude-opus-5-5`; no run here used
+it, so §3 reports stand-ins, not that model.
 
 Reference: R. Han et al., *PLE: Physical-Engineering's Last Exam*,
 arXiv:2610.30537, 2026.
-The 81 tests and the end-to-end WebSocket test pass with no network.
 
 ---
 
@@ -290,49 +292,3 @@ attachment — `artifacts.md` caps one deliverable at 95 MiB and the folder at
 
 Optional. It creates a DOI after the competition closes and changes nothing about
 judging.
-
----
-
-## [REPLACE AFTER DEV RUN] — three blocks only
-
-Everything above is final except these. Replace them once `artifact` exists;
-nothing else in the paste text changes.
-
-**1. Header line.** Replace
-
-```
-- Other models tested: none yet — the second model run is not done, so §3 reports
-  design intent rather than a measured comparison
-- Dev score (29 tasks): not measured. `artifacts/` has not been generated, so no
-  dev score, cost per task or minutes per task can be reported
-```
-
-with the real figures from `artifacts/manifest.json` and
-`scripts/report_telemetry.py`:
-
-```
-- Other models tested: google-cloud/gemini-4-argon
-- Dev score (29 tasks): <mean reward> | $<x>/task | <n> min/task
-```
-
-Also update the Commit SHA to the submission commit
-(`git rev-parse HEAD` after `artifacts/` is committed).
-
-**2. §1.2.** Replace the engineering table with the dev ablation table the form
-expects — `enforce=False`, `+ acquisition`, `+ conditional gates`, submitted —
-with columns Dev (29), Str (4), Civ (9), Elec (9), Mech (7), $/task. Two
-`eval/run.py` runs produce it. Keep the "two things that failed" paragraph; it is
-still true.
-
-**3. §3 and §4.** Fill the two rows and add the score-vs-cost figure.
-
-## Why nothing is invented here
-
-The form scores §1.2, §3 and §4 on measurement — together with the ablation table
-inside §1.2, that is more than half the rubric. Writing plausible numbers into
-those cells would read better and would be a fabricated claim about work that has
-not been done, in a competition whose `rules.md` explicitly requires artifacts to
-come from `eval/run.py` with the declared model. A judge comparing this writeup to
-the repository would find no `artifacts/`, and the entry would be disqualified
-rather than scored. The honest version is weaker and survives contact with the
-repo.

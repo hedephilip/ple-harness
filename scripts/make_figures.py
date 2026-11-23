@@ -1,159 +1,210 @@
-"""Generate the writeup figures that do not depend on dev-set results.
+"""Generate the writeup figures with high-definition vector-sharp clarity.
 
     python scripts/make_figures.py
 
 Writes docs/figures/card.png (560x280, the Kaggle card) and
-docs/figures/architecture.png (the control loop). Figures that need measured
-data — failure breakdown, score vs cost — are not here by design: they can only
-be drawn after `eval/run.py`, and inventing them would misrepresent the entry.
+docs/figures/architecture.png (2400x1320, 2K control loop diagram).
 """
 from __future__ import annotations
 
 import pathlib
-
 from PIL import Image, ImageDraw, ImageFont
 
 OUT = pathlib.Path(__file__).resolve().parent.parent / "docs" / "figures"
-BG = (15, 23, 42)
-PANEL = (30, 41, 59)
-INK = (226, 232, 240)
+
+# Dark slate palette
+BG = (11, 17, 32)
+PANEL = (22, 33, 54)
+PANEL_BORDER = (51, 65, 85)
+INK = (241, 245, 249)
 MUTED = (148, 163, 184)
-ACCENT = (56, 189, 248)
-WARN = (248, 180, 90)
+ACCENT = (56, 189, 248)       # Cyan
+ACCENT_BG = (18, 44, 74)
+GATE_COLOR = (251, 146, 60)    # Amber/orange
+GATE_BG = (45, 28, 16)
+ACQ_COLOR = (52, 211, 153)     # Emerald/green
+ACQ_BG = (16, 42, 36)
 
-FONT = "C:/Windows/Fonts/arial.ttf"
-FONT_BOLD = "C:/Windows/Fonts/arialbd.ttf"
+FONT_FAMILY = "C:/Windows/Fonts/segoeui.ttf"
+FONT_BOLD = "C:/Windows/Fonts/seguisb.ttf"
+FONT_MONO = "C:/Windows/Fonts/consola.ttf"
 
 
-def font(size: int, bold: bool = False):
+def get_font(size: int, bold: bool = False, mono: bool = False):
     try:
-        return ImageFont.truetype(FONT_BOLD if bold else FONT, size)
+        path = FONT_MONO if mono else (FONT_BOLD if bold else FONT_FAMILY)
+        return ImageFont.truetype(path, size)
     except OSError:
-        return ImageFont.load_default()
+        try:
+            return ImageFont.truetype("C:/Windows/Fonts/arialbd.ttf" if bold else "C:/Windows/Fonts/arial.ttf", size)
+        except OSError:
+            return ImageFont.load_default()
 
 
-def box(draw, xy, fill, outline=None, width=1, radius=8):
+def draw_box(draw, xy, fill, outline=None, width=2, radius=16):
     draw.rounded_rectangle(xy, radius=radius, fill=fill, outline=outline, width=width)
 
 
-def arrow(draw, start, end, colour=MUTED, width=2):
+def draw_arrow(draw, start, end, colour=MUTED, width=4, tip_size=12):
     draw.line([start, end], fill=colour, width=width)
-    (x1, y1), (x2, y2) = start, end
+    x1, y1 = start
+    x2, y2 = end
     if abs(x2 - x1) >= abs(y2 - y1):
-        tip = 6 if x2 > x1 else -6
-        draw.polygon([(x2, y2), (x2 - tip, y2 - 4), (x2 - tip, y2 + 4)], fill=colour)
+        direction = 1 if x2 > x1 else -1
+        draw.polygon([
+            (x2, y2),
+            (x2 - direction * tip_size, y2 - tip_size * 0.6),
+            (x2 - direction * tip_size, y2 + tip_size * 0.6)
+        ], fill=colour)
     else:
-        tip = 6 if y2 > y1 else -6
-        draw.polygon([(x2, y2), (x2 - 4, y2 - tip), (x2 + 4, y2 - tip)], fill=colour)
+        direction = 1 if y2 > y1 else -1
+        draw.polygon([
+            (x2, y2),
+            (x2 - tip_size * 0.6, y2 - direction * tip_size),
+            (x2 + tip_size * 0.6, y2 - direction * tip_size)
+        ], fill=colour)
 
 
 def card() -> None:
-    image = Image.new("RGB", (560, 280), BG)
-    draw = ImageDraw.Draw(image)
-    draw.rectangle([0, 0, 560, 5], fill=ACCENT)
+    # 560x280 at 2x supersampling for extreme sharpness
+    scale = 2
+    w, h = 560 * scale, 280 * scale
+    img = Image.new("RGB", (w, h), BG)
+    draw = ImageDraw.Draw(img)
 
-    draw.text((28, 24), "PLE 2026  ·  AGENT HARNESS", font=font(13), fill=ACCENT)
-    draw.text((28, 48), "Gated Harness", font=font(38, True), fill=INK)
-    draw.text((28, 96), "The gate re-opens every deliverable", font=font(16), fill=MUTED)
-    draw.text((28, 118), "and recomputes it from disk.", font=font(16), fill=MUTED)
+    # Accent top bar
+    draw.rectangle([0, 0, w, 8 * scale], fill=ACCENT)
+
+    draw.text((28 * scale, 24 * scale), "PLE 2026  ·  AGENT HARNESS", font=get_font(13 * scale, bold=True), fill=ACCENT)
+    draw.text((28 * scale, 48 * scale), "Gated Harness", font=get_font(38 * scale, bold=True), fill=INK)
+    draw.text((28 * scale, 100 * scale), "The gate re-opens every deliverable", font=get_font(16 * scale), fill=MUTED)
+    draw.text((28 * scale, 124 * scale), "and recomputes it from disk.", font=get_font(16 * scale), fill=MUTED)
 
     steps = ["model", "harness", "gate", "deliverable"]
-    x = 28
+    x = 28 * scale
     for index, step in enumerate(steps):
-        width = 112
-        colour = WARN if step == "gate" else PANEL
-        box(draw, [x, 158, x + width, 200], colour)
+        bw = 112 * scale
+        colour = GATE_COLOR if step == "gate" else PANEL
+        b_outline = GATE_COLOR if step == "gate" else PANEL_BORDER
+        draw_box(draw, [x, 160 * scale, x + bw, 204 * scale], fill=colour, outline=b_outline, width=2 * scale, radius=10 * scale)
         label_colour = BG if step == "gate" else INK
-        draw.text((x + 14, 172), step, font=font(14, True), fill=label_colour)
+        draw.text((x + 16 * scale, 172 * scale), step, font=get_font(15 * scale, bold=True), fill=label_colour)
         if index < len(steps) - 1:
-            arrow(draw, (x + width + 4, 179), (x + width + 18, 179), ACCENT)
-        x += width + 22
+            draw_arrow(draw, (x + bw + 4 * scale, 182 * scale), (x + bw + 18 * scale, 182 * scale), ACCENT, width=3 * scale, tip_size=8 * scale)
+        x += bw + 22 * scale
 
-    draw.text((28, 222), "Strict pass · signed failure · bounded repair", font=font(13), fill=MUTED)
-    draw.text((28, 248), "github.com/hedephilip/ple-harness", font=font(12), fill=ACCENT)
+    draw.text((28 * scale, 224 * scale), "Strict pass · signed failure · bounded repair", font=get_font(13 * scale), fill=MUTED)
+    draw.text((28 * scale, 250 * scale), "github.com/hedephilip/ple-harness", font=get_font(12 * scale, bold=True), fill=ACCENT)
+
+    # Downsample to target 560x280 with Lanczos for razor-sharp antialiasing
+    final_card = img.resize((560, 280), Image.Resampling.LANCZOS)
     OUT.mkdir(parents=True, exist_ok=True)
-    image.save(OUT / "card.png")
+    final_card.save(OUT / "card.png", quality=100)
 
 
 def architecture() -> None:
-    image = Image.new("RGB", (1200, 660), BG)
-    draw = ImageDraw.Draw(image)
-    draw.text((36, 30), "Gated Harness — control loop", font=font(26, True), fill=INK)
-    draw.text((36, 66), "The model proposes. Python re-reads the artifact and disposes.",
-              font=font(14), fill=MUTED)
+    # 2K Resolution: 2400 x 1320 (2x of 1200x660)
+    scale = 2
+    w, h = 1200 * scale, 660 * scale
+    img = Image.new("RGB", (w, h), BG)
+    draw = ImageDraw.Draw(img)
 
-    # evaluator
-    box(draw, [36, 120, 300, 300], PANEL, outline=(71, 85, 105))
-    draw.text((52, 134), "Evaluator", font=font(16, True), fill=INK)
-    for index, line in enumerate(["task frame (instruction,", "workdir, limits)",
-                                  "exec · read_file", "write_file · http"]):
-        draw.text((52, 162 + index * 24), line, font=font(12), fill=MUTED)
+    # Header
+    draw.text((40 * scale, 32 * scale), "Gated Harness — control loop", font=get_font(28 * scale, bold=True), fill=INK)
+    draw.text((40 * scale, 74 * scale), "The model proposes. Python re-reads the artifact and disposes.",
+              font=get_font(15 * scale), fill=MUTED)
 
-    # serve + harness
-    box(draw, [360, 120, 660, 300], PANEL, outline=ACCENT, width=2)
-    draw.text((376, 134), "serve.py  ·  harness.py", font=font(16, True), fill=ACCENT)
-    for index, line in enumerate(["WebSocket v1, ping_interval=None",
-                                  "one agent turn per round",
-                                  "tool calls → protocol requests",
-                                  "budget: rounds, not wall clock"]):
-        draw.text((376, 162 + index * 24), line, font=font(12), fill=MUTED)
+    # 1. Evaluator Box (Top Left)
+    draw_box(draw, [40 * scale, 120 * scale, 310 * scale, 305 * scale], fill=PANEL, outline=PANEL_BORDER, width=2 * scale, radius=14 * scale)
+    draw.text((58 * scale, 136 * scale), "Evaluator", font=get_font(18 * scale, bold=True), fill=INK)
+    lines_eval = [
+        "task frame (instruction,",
+        "workdir, limits)",
+        "exec · read_file",
+        "write_file · http"
+    ]
+    for idx, l in enumerate(lines_eval):
+        draw.text((58 * scale, 172 * scale + idx * 28 * scale), l, font=get_font(13 * scale), fill=MUTED)
 
-    # model
-    box(draw, [720, 120, 1000, 220], PANEL, outline=(71, 85, 105))
-    draw.text((736, 134), "Model (sponsored)", font=font(16, True), fill=INK)
-    draw.text((736, 162), "egress proxy, model endpoint", font=font(12), fill=MUTED)
-    draw.text((736, 184), "only reachable host", font=font(12), fill=MUTED)
-    arrow(draw, (664, 176), (714, 176), ACCENT)
-    arrow(draw, (714, 200), (664, 200), MUTED)
+    # 2. serve.py · harness.py Box (Top Center - Highlighted Cyan)
+    draw_box(draw, [370 * scale, 120 * scale, 680 * scale, 305 * scale], fill=ACCENT_BG, outline=ACCENT, width=3 * scale, radius=14 * scale)
+    draw.text((390 * scale, 136 * scale), "serve.py  ·  harness.py", font=get_font(18 * scale, bold=True), fill=ACCENT)
+    lines_serve = [
+        "WebSocket v1, ping_interval=None",
+        "one agent turn per round",
+        "tool calls → protocol requests",
+        "budget: rounds, not wall clock"
+    ]
+    for idx, l in enumerate(lines_serve):
+        draw.text((390 * scale, 172 * scale + idx * 28 * scale), l, font=get_font(13 * scale), fill=INK)
 
-    # task container
-    box(draw, [360, 340, 660, 470], PANEL, outline=(71, 85, 105))
-    draw.text((376, 354), "Task container", font=font(16, True), fill=INK)
-    draw.text((376, 382), "/app  ·  /filesystem", font=font(12), fill=MUTED)
-    draw.text((376, 404), "corpus, spreads, CAD, mail", font=font(12), fill=MUTED)
-    draw.text((376, 430), "2 CPU · 4 GB · 6 h", font=font(12), fill=MUTED)
-    arrow(draw, (510, 304), (510, 334), MUTED)
-    arrow(draw, (540, 334), (540, 304), MUTED)
+    # 3. Model (sponsored) Box (Top Right)
+    draw_box(draw, [740 * scale, 120 * scale, 1040 * scale, 230 * scale], fill=PANEL, outline=PANEL_BORDER, width=2 * scale, radius=14 * scale)
+    draw.text((760 * scale, 136 * scale), "Model (sponsored)", font=get_font(18 * scale, bold=True), fill=INK)
+    draw.text((760 * scale, 172 * scale), "egress proxy, model endpoint", font=get_font(13 * scale), fill=MUTED)
+    draw.text((760 * scale, 196 * scale), "only reachable host", font=get_font(13 * scale), fill=MUTED)
 
-    # acquisition
-    box(draw, [36, 340, 300, 470], (24, 49, 44), outline=(45, 120, 100))
-    draw.text((52, 354), "Acquisition", font=font(16, True), fill=(134, 239, 172))
-    for index, line in enumerate(["paths from the prompt",
-                                  "find /app /filesystem -newer",
-                                  "folders enumerated",
-                                  "zip · docx · xlsx opened"]):
-        draw.text((52, 382 + index * 22), line, font=font(12), fill=MUTED)
-    arrow(draw, (306, 405), (354, 405), (45, 120, 100))
+    # Connectors between serve.py and Model
+    draw_arrow(draw, (684 * scale, 168 * scale), (734 * scale, 168 * scale), ACCENT, width=3 * scale, tip_size=10 * scale)
+    draw_arrow(draw, (734 * scale, 195 * scale), (684 * scale, 195 * scale), MUTED, width=3 * scale, tip_size=10 * scale)
 
-    # gate
-    box(draw, [720, 340, 1000, 470], (49, 38, 24), outline=WARN, width=2)
-    draw.text((736, 354), "Gate registry", font=font(16, True), fill=WARN)
-    for index, line in enumerate(["13 discipline gates",
-                                  "6 cross-cutting gates",
-                                  "applies(ctx) — declines, not fails",
-                                  "signed (gate, cause, obs, limit)"]):
-        draw.text((736, 382 + index * 22), line, font=font(12), fill=MUTED)
-    arrow(draw, (666, 405), (714, 405), WARN)
-    arrow(draw, (714, 430), (666, 430), MUTED)
+    # 4. Acquisition Box (Middle Left - Green Accent)
+    draw_box(draw, [40 * scale, 345 * scale, 310 * scale, 485 * scale], fill=ACQ_BG, outline=ACQ_COLOR, width=2 * scale, radius=14 * scale)
+    draw.text((58 * scale, 360 * scale), "Acquisition", font=get_font(18 * scale, bold=True), fill=ACQ_COLOR)
+    lines_acq = [
+        "paths from the prompt",
+        "find /app /filesystem -newer",
+        "folders enumerated",
+        "zip · docx · xlsx opened"
+    ]
+    for idx, l in enumerate(lines_acq):
+        draw.text((58 * scale, 394 * scale + idx * 26 * scale), l, font=get_font(13 * scale), fill=MUTED)
+    draw_arrow(draw, (314 * scale, 415 * scale), (364 * scale, 415 * scale), ACQ_COLOR, width=3 * scale, tip_size=10 * scale)
 
-    # repair loop
-    box(draw, [360, 520, 660, 610], PANEL, outline=(71, 85, 105))
-    draw.text((376, 534), "Repair, bounded", font=font(16, True), fill=INK)
-    draw.text((376, 562), "failures → one lesson → retry", font=font(12), fill=MUTED)
-    draw.text((376, 584), "then stop: no unbounded self-correction", font=font(12), fill=MUTED)
-    arrow(draw, (510, 474), (510, 514), MUTED)
-    arrow(draw, (664, 560), (716, 500), MUTED)
+    # 5. Task Container Box (Middle Center)
+    draw_box(draw, [370 * scale, 345 * scale, 680 * scale, 485 * scale], fill=PANEL, outline=PANEL_BORDER, width=2 * scale, radius=14 * scale)
+    draw.text((390 * scale, 360 * scale), "Task container", font=get_font(18 * scale, bold=True), fill=INK)
+    draw.text((390 * scale, 394 * scale), "/app  ·  /filesystem", font=get_font(13 * scale, bold=True), fill=ACCENT)
+    draw.text((390 * scale, 422 * scale), "corpus, spreads, CAD, mail", font=get_font(13 * scale), fill=MUTED)
+    draw.text((390 * scale, 448 * scale), "2 CPU · 4 GB · 6 h", font=get_font(13 * scale), fill=MUTED)
 
-    draw.text((36, 628), "Verdict goes to a log frame; final_message carries the "
-                         "agent's words to the grader.", font=font(12), fill=MUTED)
-    image.save(OUT / "architecture.png")
+    # Connectors between serve.py and Task container
+    draw_arrow(draw, (515 * scale, 310 * scale), (515 * scale, 340 * scale), MUTED, width=3 * scale, tip_size=10 * scale)
+    draw_arrow(draw, (545 * scale, 340 * scale), (545 * scale, 310 * scale), MUTED, width=3 * scale, tip_size=10 * scale)
+
+    # 6. Gate Registry Box (Middle Right - Amber Accent)
+    draw_box(draw, [740 * scale, 345 * scale, 1040 * scale, 485 * scale], fill=GATE_BG, outline=GATE_COLOR, width=3 * scale, radius=14 * scale)
+    draw.text((760 * scale, 360 * scale), "Gate registry", font=get_font(18 * scale, bold=True), fill=GATE_COLOR)
+    lines_gate = [
+        "13 discipline gates",
+        "6 cross-cutting gates",
+        "applies(ctx) — declines, not fails",
+        "signed (gate, cause, obs, limit)"
+    ]
+    for idx, l in enumerate(lines_gate):
+        draw.text((760 * scale, 394 * scale + idx * 26 * scale), l, font=get_font(13 * scale), fill=INK)
+    draw_arrow(draw, (684 * scale, 415 * scale), (734 * scale, 415 * scale), GATE_COLOR, width=3 * scale, tip_size=10 * scale)
+    draw_arrow(draw, (734 * scale, 445 * scale), (684 * scale, 445 * scale), MUTED, width=3 * scale, tip_size=10 * scale)
+
+    # 7. Repair, Bounded Box (Bottom Center)
+    draw_box(draw, [370 * scale, 530 * scale, 680 * scale, 625 * scale], fill=PANEL, outline=PANEL_BORDER, width=2 * scale, radius=14 * scale)
+    draw.text((390 * scale, 544 * scale), "Repair, bounded", font=get_font(18 * scale, bold=True), fill=INK)
+    draw.text((390 * scale, 574 * scale), "failures → one lesson → retry", font=get_font(13 * scale), fill=MUTED)
+    draw.text((390 * scale, 598 * scale), "then stop: no unbounded self-correction", font=get_font(13 * scale), fill=MUTED)
+
+    # Connectors to Repair
+    draw_arrow(draw, (525 * scale, 490 * scale), (525 * scale, 525 * scale), MUTED, width=3 * scale, tip_size=10 * scale)
+    draw_arrow(draw, (684 * scale, 575 * scale), (745 * scale, 510 * scale), MUTED, width=3 * scale, tip_size=10 * scale)
+
+    # Footer note
+    draw.text((40 * scale, 634 * scale), "Verdict goes to a log frame; final_message carries the agent's words to the grader.",
+              font=get_font(13 * scale), fill=MUTED)
+
+    OUT.mkdir(parents=True, exist_ok=True)
+    img.save(OUT / "architecture.png", quality=100)
+    print(f"Saved {OUT / 'architecture.png'} ({w}x{h})")
 
 
 if __name__ == "__main__":
-    OUT.mkdir(parents=True, exist_ok=True)
     card()
     architecture()
-    for name in ("card.png", "architecture.png"):
-        path = OUT / name
-        with Image.open(path) as image:
-            print(f"{name}: {image.size[0]}x{image.size[1]}  {path.stat().st_size // 1024} KiB")

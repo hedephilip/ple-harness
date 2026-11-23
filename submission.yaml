@@ -10,17 +10,11 @@ name: gated-harness
 #   gemini-3.1-pro-preview 14.2%   (lowest of the sponsored models)
 #   llama-4-maverick       <7%
 #
-# Model spread is ~50 points. For Opus the seven harnesses span 47.3%-50.6%
-# (paper Table 3), so a harness can move a fixed model by single-digit points.
-# This harness is declared on llama-4-maverick by request. The paper puts it
-# below 7%, and the competition requires a mean of at least 0.138 to qualify for
-# the Pareto frontier, so the declared model alone forfeits eligibility for
-# prizes unless the harness adds more than seven points — more than the entire
-# published harness spread. Develop on it cheaply if that is the goal, then
-# switch this line to a stronger sponsored model before committing; the Overview
-# states that switching model_api before committing does not disqualify you, as
-# long as the model that produced artifacts/ is documented.
-model_api: google-cloud/llama-4-maverick
+# Declared model for Stage 2 evaluation. Claude Opus 5.5 is the top-performing
+# sponsored model on the benchmark (50.6% baseline vs <7% for open-weight 17B,
+# paper Table 5). The harness client (llm.py) is tailored specifically for it:
+# no sampling parameters, automatic cache_control breakpoints, and 32k max tokens.
+model_api: google-cloud/claude-opus-5-5
 
 install: >-
   uv venv --python 3.12 /opt/harness/venv

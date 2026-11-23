@@ -118,6 +118,6 @@ Then, in `docs/WRITEUP.md`:
 
 ## What is already verified
 
-81 tests, the protocol end-to-end test, seven of eight `kit check` stages, a
+84 tests, the protocol end-to-end test, seven of eight `kit check` stages, a
 1,981-word writeup with rubric-matched headings, and a commit SHA that resolves
 to the code snapshot. The open items are all measurements, not code.
