@@ -1,7 +1,7 @@
 # Gated Harness: compliance is the floor, not the score
 
 - Repo: https://github.com/hedephilip/ple-harness
-- Commit SHA: `d87b7815cf9de49cee520f63130eb639e2c6888a` — the tree where code and scripts were last changed. Commits after it are docs only: `git diff --name-only d87b781 HEAD -- '*.py'` is empty.
+- Commit SHA: `cf2ed68bdc7f2638fe62cbf228e67c1f8afaf277` — the tree where code and scripts were last changed. Commits after it are docs only: `git diff --name-only cf2ed68 HEAD -- '*.py'` is empty.
 - Primary model_api: google-cloud/claude-opus-5-5
 - Other models: two local stand-ins only — the sponsored gateway is not
   reachable from this machine, so §3 reports stand-ins, not the declared models
