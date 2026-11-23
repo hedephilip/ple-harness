@@ -3,22 +3,23 @@ name: dev-run
 # Produces artifacts/ on a machine that meets the runner's requirements: the
 # standard GitHub runner gives 4 vCPU, 16 GB RAM and ~14 GB of disk.
 #
-# The model is a local Ollama instance fronted by the kit's LiteLLM proxy, which
-# is the sanctioned local path: eval/run.py refuses --model-base-url while
+# The model is a local Ollama instance fronted by a LiteLLM proxy, which is the
+# sanctioned local path: eval/run.py refuses --model-base-url while
 # submission.yaml declares a google-cloud/* model, and tells you to point
-# MODEL_PROXY_URL at your server instead. The proxy maps the declared id onto the
-# local model, so the harness still asks for google-cloud/llama-4-maverick.
+# MODEL_PROXY_URL at your server instead. The proxy maps EVERY declared
+# google-cloud id onto the local model, so the harness still asks for
+# google-cloud/claude-opus-5-5 and the proxy answers it.
 on:
   workflow_dispatch:
     inputs:
       tasks:
-        description: "comma-separated dev task ids"
+        description: "comma-separated dev task ids, or 'all' for the full 29"
         required: true
-        default: "roof-deck-design"
+        default: "all"
       model:
         description: "ollama model tag served behind the proxy"
         required: true
-        default: "qwen2.5:1.5b"
+        default: "qwen2.5:7b"
 
 permissions:
   contents: write
@@ -31,6 +32,8 @@ jobs:
     env:
       MODEL_PROXY_KEY: ci-proxy-key
       MODEL_PROXY_URL: http://127.0.0.1:4000
+      # The id submission.yaml declares. The proxy serves this name.
+      DECLARED_MODEL: google-cloud/claude-opus-5-5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,9 +61,11 @@ jobs:
 
       - name: Start the model proxy
         run: |
-          cat > "$RUNNER_TEMP/proxy.yaml" <<'YAML'
+          cat > "$RUNNER_TEMP/proxy.yaml" <<YAML
           model_list:
-            - model_name: llama-4-maverick
+            - model_name: $DECLARED_MODEL
+              litellm_params: {model: ollama_chat/${{ inputs.model }}, api_base: http://127.0.0.1:11434}
+            - model_name: claude-opus-5-5
               litellm_params: {model: ollama_chat/${{ inputs.model }}, api_base: http://127.0.0.1:11434}
             - model_name: google-cloud/llama-4-maverick
               litellm_params: {model: ollama_chat/${{ inputs.model }}, api_base: http://127.0.0.1:11434}
@@ -78,7 +83,9 @@ jobs:
             curl -sf -H "Authorization: Bearer $MODEL_PROXY_KEY" http://127.0.0.1:4000/v1/models > /dev/null && break
             sleep 2
           done
-          curl -s -H "Authorization: Bearer $MODEL_PROXY_KEY" http://127.0.0.1:4000/v1/models | head -c 400
+          # Prove the declared id is actually served: a proxy that omits it makes
+          # every task fail with a 400 that looks like a harness bug.
+          curl -s -H "Authorization: Bearer $MODEL_PROXY_KEY" http://127.0.0.1:4000/v1/models | head -c 600
 
       - name: Fetch the benchmark
         run: git clone --depth 1 https://github.com/google-research/ple "$RUNNER_TEMP/ple"
@@ -103,10 +110,22 @@ jobs:
             401) echo "::error::The token was rejected. Check that it is a read token for the granted account."; exit 1 ;;
             403) echo "::error::The token is valid but the account has no access to this gated dataset."
                  echo "::error::Open https://huggingface.co/datasets/google/physical-engineerings-last-exam signed in,"
-                 echo "::error::click 'Agree and access repository', then re-dispatch."
-                 exit 1 ;;
+                 echo "::error::click 'Agree and access repository', then re-dispatch."; exit 1 ;;
             *)   echo "::error::Dataset blob fetch returned HTTP $code."; exit 1 ;;
           esac
+
+      - name: Resolve the task list
+        id: tasklist
+        working-directory: ${{ runner.temp }}/ple
+        run: |
+          if [ "${{ inputs.tasks }}" = "all" ]; then
+            TASKS=$(python -c "import yaml;print(','.join(t['id'] for t in yaml.safe_load(open('eval/dev_set.yaml'))['tasks']))")
+            echo "resolved all 29 dev tasks"
+          else
+            TASKS="${{ inputs.tasks }}"
+          fi
+          echo "count: $(echo "$TASKS" | tr ',' '\n' | wc -l)"
+          echo "tasks=$TASKS" >> "$GITHUB_OUTPUT"
 
       - name: Run the dev tasks
         working-directory: ${{ runner.temp }}/ple
@@ -118,7 +137,7 @@ jobs:
           # default (runs/<name>-<time> inside the benchmark clone) already does.
           # Artifacts are exported to $GITHUB_WORKSPACE/artifacts regardless.
           uv run python -m eval.run "$GITHUB_WORKSPACE" \
-            --tasks "${{ inputs.tasks }}" \
+            --tasks "${{ steps.tasklist.outputs.tasks }}" \
             --trials 1 \
             --attempts 1
 
@@ -138,27 +157,39 @@ jobs:
           echo '--- proxy log tail ---'; tail -20 "$HOME/proxy.log" 2>/dev/null || true
           echo '--- runs ---'; ls -la runs 2>/dev/null | tail -5 || true
           echo '--- artifacts ---'; ls -la artifacts 2>/dev/null || echo 'no artifacts/'
-          head -c 1200 artifacts/manifest.json 2>/dev/null || true
+          echo '--- manifest ---'
+          python - <<'PY'
+          import json, pathlib
+          p = pathlib.Path('artifacts/manifest.json')
+          if not p.is_file():
+              print('no manifest')
+          else:
+              m = json.loads(p.read_text())
+              tasks = m.get('tasks') or {}
+              rewards = [t.get('reward') or 0 for t in tasks.values()]
+              print('tasks:', len(tasks))
+              print('mean reward:', round(sum(rewards) / len(rewards), 4) if rewards else 'n/a')
+          PY
 
-      - name: Keep the run directory
+      - name: Upload the run
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: run-out
           path: |
-            artifacts
-            run-logs
+            artifacts/
+            run-logs/
           if-no-files-found: warn
 
-      - name: Commit artifacts
+      - name: Commit the artifacts
         if: success()
         run: |
           git config user.name "dev-run"
           git config user.email "dev-run@users.noreply.github.com"
           git add -A artifacts
           if git diff --cached --quiet; then
-            echo "no artifacts to commit"
+            echo "no artifact change to commit"
           else
-            git commit -m "artifacts: dev run of ${{ inputs.tasks }} on ${{ inputs.model }}"
+            git commit -m "artifacts: dev run $(date -u +%Y-%m-%dT%H:%MZ)"
             git push
           fi
