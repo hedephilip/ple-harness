@@ -1,14 +1,25 @@
 name: dev-run
 
-# Produces artifacts/ on a machine that meets the runner's requirements: the
-# standard GitHub runner gives 4 vCPU, 16 GB RAM and ~14 GB of disk.
+# Produces artifacts/ for the public dev set on runners that meet the kit's
+# requirements (standard GitHub runner: 4 vCPU, 16 GB RAM, ~14 GB disk).
 #
-# The model is a local Ollama instance fronted by a LiteLLM proxy, which is the
+# Why this is sharded rather than one serial pass:
+#   * Every dev task sets time_limit_min: 360, so a single task may legally run
+#     longer than a whole job is allowed to live. A serial 29-task pass can
+#     therefore be killed with nothing exported -- which is what happened on
+#     2026-11-23 (job 45145442834: 355 min, step failure, 0 artifacts).
+#   * `--trials` is task *concurrency*, and one trial needs ~4 vCPU (2 for the
+#     task, 2 for the harness serve stack) plus ~8 GiB, so a 4 vCPU runner can
+#     only ever run one trial at a time. Parallelism has to come from separate
+#     jobs, not from that flag.
+# Each shard is its own runner, exports its own artifacts/, and a merge job
+# unions the per-task manifest entries.
+#
+# The model is a local Ollama instance behind a LiteLLM proxy, which is the
 # sanctioned local path: eval/run.py refuses --model-base-url while
-# submission.yaml declares a google-cloud/* model, and tells you to point
-# MODEL_PROXY_URL at your server instead. The proxy maps EVERY declared
-# google-cloud id onto the local model, so the harness still asks for
-# google-cloud/claude-opus-5-5 and the proxy answers it.
+# submission.yaml declares a google-cloud/* model and points you at
+# MODEL_PROXY_URL instead. The proxy serves the declared id so the harness still
+# asks for google-cloud/claude-opus-5-5.
 on:
   workflow_dispatch:
     inputs:
@@ -20,20 +31,77 @@ on:
         description: "ollama model tag served behind the proxy"
         required: true
         default: "qwen2.5:7b"
+      shards:
+        description: "parallel jobs when tasks=all (1-8)"
+        required: true
+        default: "6"
 
 permissions:
   contents: write
 
+env:
+  MODEL_PROXY_KEY: ci-proxy-key
+  MODEL_PROXY_URL: http://127.0.0.1:4000
+  DECLARED_MODEL: google-cloud/claude-opus-5-5
+
 jobs:
+  plan:
+    name: plan shards
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.split.outputs.shards }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the benchmark
+        run: git clone --depth 1 https://github.com/google-research/ple "$RUNNER_TEMP/ple"
+
+      - name: Split the task list
+        id: split
+        run: |
+          python - "${{ inputs.tasks }}" "${{ inputs.shards }}" <<'PY'
+          import json, os, sys, yaml
+
+          want, n = sys.argv[1], max(1, min(8, int(sys.argv[2])))
+          dev = yaml.safe_load(open(os.environ["RUNNER_TEMP"] + "/ple/eval/dev_set.yaml"))
+          ids = [t["id"] for t in dev["tasks"]]
+          if want.strip() == "all":
+              chosen = ids
+          else:
+              chosen = [x.strip() for x in want.split(",") if x.strip()]
+              unknown = [x for x in chosen if x not in ids]
+              if unknown:
+                  sys.exit("unknown dev task id(s): " + ", ".join(unknown))
+              n = 1  # an explicit list is small: keep it in one job
+          # Interleave rather than slice: neighbouring ids in dev_set.yaml are
+          # the same discipline and often the same size, so slicing would put
+          # all the slow ones in one shard.
+          groups = [chosen[i::n] for i in range(n)]
+          groups = [g for g in groups if g]
+          print("total tasks: %d -> %d shard(s)" % (len(chosen), len(groups)))
+          for i, g in enumerate(groups):
+              print("  shard %d: %d tasks" % (i, len(g)))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write("shards=%s\n" % json.dumps(list(range(len(groups)))))
+          with open(os.environ["RUNNER_TEMP"] + "/groups.json", "w") as f:
+              json.dump(groups, f)
+          PY
+
+      - name: Upload the shard plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: shard-plan
+          path: ${{ runner.temp }}/groups.json
+
   run:
-    name: run dev tasks
+    name: shard ${{ matrix.shard }}
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 350
-    env:
-      MODEL_PROXY_KEY: ci-proxy-key
-      MODEL_PROXY_URL: http://127.0.0.1:4000
-      # The id submission.yaml declares. The proxy serves this name.
-      DECLARED_MODEL: google-cloud/claude-opus-5-5
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -83,8 +151,8 @@ jobs:
             curl -sf -H "Authorization: Bearer $MODEL_PROXY_KEY" http://127.0.0.1:4000/v1/models > /dev/null && break
             sleep 2
           done
-          # Prove the declared id is actually served: a proxy that omits it makes
-          # every task fail with a 400 that looks like a harness bug.
+          # Prove the declared id is served: a proxy that omits it makes every
+          # task fail with a 400 that reads like a harness bug.
           curl -s -H "Authorization: Bearer $MODEL_PROXY_KEY" http://127.0.0.1:4000/v1/models | head -c 600
 
       - name: Fetch the benchmark
@@ -100,8 +168,6 @@ jobs:
             echo "::error::then add a read token as the repository secret HF_TOKEN."
             exit 1
           fi
-          # Probe a real file, not the listing. The metadata tree answers 200 even
-          # for an account without access, which is exactly how this was missed.
           code=$(curl -sL -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $HF_TOKEN" \
             https://huggingface.co/datasets/google/physical-engineerings-last-exam/resolve/main/.gitattributes)
           echo "dataset blob with token: HTTP $code"
@@ -114,17 +180,17 @@ jobs:
             *)   echo "::error::Dataset blob fetch returned HTTP $code."; exit 1 ;;
           esac
 
-      - name: Resolve the task list
+      - name: Download the shard plan
+        uses: actions/download-artifact@v4
+        with:
+          name: shard-plan
+          path: ${{ runner.temp }}
+
+      - name: Resolve this shard's tasks
         id: tasklist
-        working-directory: ${{ runner.temp }}/ple
         run: |
-          if [ "${{ inputs.tasks }}" = "all" ]; then
-            TASKS=$(python -c "import yaml;print(','.join(t['id'] for t in yaml.safe_load(open('eval/dev_set.yaml'))['tasks']))")
-            echo "resolved all 29 dev tasks"
-          else
-            TASKS="${{ inputs.tasks }}"
-          fi
-          echo "count: $(echo "$TASKS" | tr ',' '\n' | wc -l)"
+          TASKS=$(python -c "import json,os;g=json.load(open(os.environ['RUNNER_TEMP']+'/groups.json'));print(','.join(g[${{ matrix.shard }}]))")
+          echo "shard ${{ matrix.shard }}: $(echo "$TASKS" | tr ',' '\n' | wc -l) tasks"
           echo "tasks=$TASKS" >> "$GITHUB_OUTPUT"
 
       - name: Run the dev tasks
@@ -133,9 +199,11 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           uv tool install harbor==0.20.0 --with websockets
-          # No --out: the run directory must sit outside the submission, and the
-          # default (runs/<name>-<time> inside the benchmark clone) already does.
-          # Artifacts are exported to $GITHUB_WORKSPACE/artifacts regardless.
+          # --trials is task concurrency, not repetitions. 1 is the honest value
+          # for a 4 vCPU runner: one trial needs ~4 vCPU between the task and
+          # the serve stack, so asking for more only oversubscribes the box.
+          # No --out: the run must sit outside the submission; artifacts export
+          # to $GITHUB_WORKSPACE/artifacts regardless.
           uv run python -m eval.run "$GITHUB_WORKSPACE" \
             --tasks "${{ steps.tasklist.outputs.tasks }}" \
             --trials 1 \
@@ -149,13 +217,12 @@ jobs:
           cp "$HOME/ollama.log" run-logs/ 2>/dev/null || true
           find "$RUNNER_TEMP/ple/runs" -maxdepth 2 -type f 2>/dev/null | head -50 |
             while read -r f; do cp "$f" "run-logs/$(basename "$(dirname "$f")")-$(basename "$f")"; done
-          ls -la run-logs
+          ls -la run-logs || true
 
       - name: Show what was produced
         if: always()
         run: |
           echo '--- proxy log tail ---'; tail -20 "$HOME/proxy.log" 2>/dev/null || true
-          echo '--- runs ---'; ls -la runs 2>/dev/null | tail -5 || true
           echo '--- artifacts ---'; ls -la artifacts 2>/dev/null || echo 'no artifacts/'
           echo '--- manifest ---'
           python - <<'PY'
@@ -164,28 +231,131 @@ jobs:
           if not p.is_file():
               print('no manifest')
           else:
-              m = json.loads(p.read_text())
-              tasks = m.get('tasks') or {}
-              rewards = [t.get('reward') or 0 for t in tasks.values()]
+              tasks = (json.loads(p.read_text()).get('tasks') or {})
               print('tasks:', len(tasks))
-              print('mean reward:', round(sum(rewards) / len(rewards), 4) if rewards else 'n/a')
+              for k, v in tasks.items():
+                  print('  %-34s ended=%s reward=%s' % (k, v.get('ended'), v.get('reward')))
           PY
 
-      - name: Upload the run
+      - name: Upload this shard
+        # always(): a shard that dies mid-set still has real per-task artifacts
+        # for whatever it finished, and losing them is how 45145442834 came back
+        # empty.
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: run-out
+          name: shard-${{ matrix.shard }}
           path: |
             artifacts/
             run-logs/
           if-no-files-found: warn
+          overwrite: true
+
+  merge:
+    name: merge shards
+    needs: [plan, run]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Download every shard
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          pattern: shard-*
+          path: ${{ runner.temp }}/shards
+        continue-on-error: true
+
+      - name: Union the per-task manifest entries
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, shutil, sys
+
+          root = pathlib.Path('artifacts')
+          root.mkdir(exist_ok=True)
+          base = pathlib.Path(os.environ['RUNNER_TEMP']) / 'shards'
+          shards = sorted(p for p in base.glob('shard-*') if (p / 'artifacts').is_dir())
+          print('shards found:', [p.name for p in shards])
+          if not shards:
+              print('::warning::no shard produced artifacts; artifacts/ left untouched')
+              sys.exit(0)
+
+          merged, head = {}, None
+          for s in shards:
+              m = s / 'artifacts' / 'manifest.json'
+              if not m.is_file():
+                  print('  %s: no manifest' % s.name)
+                  continue
+              # utf-8-sig: the shard manifest is written on Windows in some
+              # local reproductions and carries a BOM there.
+              data = json.loads(m.read_text(encoding='utf-8-sig'))
+              if head is None:
+                  head = data
+              for tid, entry in (data.get('tasks') or {}).items():
+                  if tid in merged:
+                      print('  %s: duplicate task %s, keeping first' % (s.name, tid))
+                      continue
+                  merged[tid] = entry
+                  src = s / 'artifacts' / tid
+                  if src.is_dir():
+                      shutil.copytree(src, root / tid, dirs_exist_ok=True)
+                  # The kit's byte-preserving layout files travel with the shard.
+                  for name in ('.gitattributes', '.gitignore'):
+                      if (s / 'artifacts' / name).is_file() and not (root / name).is_file():
+                          shutil.copy2(s / 'artifacts' / name, root / name)
+
+          if head is None:
+              print('::warning::no shard had a readable manifest')
+              sys.exit(0)
+          # Every shard ran the same commit, so the harness block is identical
+          # across shards and one copy describes all of them.
+          out = dict(head)
+          out['tasks'] = {k: merged[k] for k in sorted(merged)}
+          (root / 'manifest.json').write_text(json.dumps(out, indent=2) + '\n', encoding='utf-8')
+          print('merged tasks: %d' % len(merged))
+          for tid in sorted(merged):
+              e = merged[tid]
+              print('  %-34s ended=%-6s reward=%s' % (tid, e.get('ended'), e.get('reward')))
+          PY
+
+      - name: Report coverage against the dev set
+        run: |
+          git clone --depth 1 https://github.com/google-research/ple "$RUNNER_TEMP/ple"
+          python - <<'PY'
+          import json, pathlib, yaml
+          dev = yaml.safe_load(open(pathlib.Path(__import__('os').environ['RUNNER_TEMP'], 'ple', 'eval', 'dev_set.yaml').read_text()))
+          want = [t['id'] for t in dev['tasks']]
+          m = json.loads(pathlib.Path('artifacts/manifest.json').read_text(encoding='utf-8-sig')) if pathlib.Path('artifacts/manifest.json').is_file() else {'tasks': {}}
+          got = set(m.get('tasks') or {})
+          missing = [t for t in want if t not in got]
+          print('coverage: %d/%d dev tasks' % (len(want) - len(missing), len(want)))
+          if missing:
+              print('::warning::no artifacts for: %s' % ', '.join(missing))
+          rewards = [v.get('reward') for v in (m.get('tasks') or {}).values() if v.get('reward') is not None]
+          if rewards:
+              print('mean reward over %d graded tasks: %.4f' % (len(rewards), sum(rewards) / len(rewards)))
+          else:
+              print('mean reward: none (no task recorded a reward)')
+          PY
+
+      - name: Review the merged artifacts
+        run: |
+          cd "$RUNNER_TEMP/ple"
+          uv run python -m kit artifacts "$GITHUB_WORKSPACE" 2>&1 | tail -40 || true
 
       - name: Commit the artifacts
-        # Not `success()`: a run that times out mid-set still produced real
-        # artifacts for the tasks it finished, and manifest.json marks each task
-        # with how it ended. Losing them to a job-level timeout would mean the
-        # only copy is the uploaded zip.
         if: always()
         run: |
           git config user.name "dev-run"
@@ -197,3 +367,12 @@ jobs:
             git commit -m "artifacts: dev run $(date -u +%Y-%m-%dT%H:%MZ)"
             git push
           fi
+
+      - name: Upload the merged artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-merged
+          path: artifacts/
+          if-no-files-found: warn
+          overwrite: true
