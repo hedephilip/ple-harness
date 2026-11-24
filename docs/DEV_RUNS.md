@@ -94,6 +94,42 @@ shape every later run must match:
 - `uv run python -m kit check ../ple-harness` — 7 of 8 stages; `artifacts`
   warns until a dev run is committed.
 
+## Run 2 — the stand-in never writes a deliverable, 2026-11-24
+
+A 29-job matrix (one dev task per job, `shards: auto`) ran the full dev set on
+`qwen2.5:7b`. It establishes the limit that blocks the artifacts requirement,
+so it is recorded here rather than in the writeup as a score.
+
+| | |
+|:-|:-|
+| Workflow run | `45305481461` |
+| Commit | `b2e5278` |
+| Outcome | 14 jobs failed at the artifacts guard, 1 passed, 14 still running at the time of writing |
+| Usable deliverables | **0** |
+
+Two trajectories, counted from their own `tool_calls`:
+
+| task | steps | `exec` | `read_file` | `write_file` | files under `files/` |
+|:-|:-:|:-:|:-:|:-:|:-:|
+| `data-hall-mep-routing` | 12 | 6 | 4 | **0** | 0 |
+| `roof-deck-design` | 125 | 23 | 100 | **0** | 0 |
+
+`data-hall-mep-routing` ends by announcing it "cannot directly read images" and
+will assume typical layouts. `roof-deck-design` spends 100 reads and then
+describes the package it intended to write. Neither model call ever emits a
+`write_file`, so the guard's verdict is correct: `nothing this task's grader
+reads: no file under files/`.
+
+The one job that passed did so on an incidental file, not a deliverable —
+`engineers-estimate-check` recorded `app/tools/.apps_data/.coordinator/config/config.json`,
+reward `0.0`, with a 91-byte `final_message.md`. A file the harness captured from
+the project folder is not a deliverable and must not be presented as one.
+
+This also means the artifacts currently committed from run 1 are **refused** by
+`kit artifacts`: `roof-deck-design` has no `files/` directory, so "no dev task in
+artifacts/ has usable artifacts". A Stage 1 entry must pass `kit artifacts`, so
+this is the blocker to clear before submission, not a telemetry gap.
+
 ## Reproducing a run
 
 ```
