@@ -35,6 +35,10 @@ on:
         description: "parallel jobs when tasks=all (1-8)"
         required: true
         default: "6"
+      commit_artifacts:
+        description: "commit artifacts/ (false: measure only, leave the repo alone)"
+        required: true
+        default: "true"
 
 permissions:
   contents: write
@@ -374,7 +378,10 @@ jobs:
           uv run python -m kit artifacts "$GITHUB_WORKSPACE" 2>&1 | tail -40 || true
 
       - name: Commit the artifacts
-        if: always()
+        # Off for measurement-only runs: a second model's artifacts would
+        # overwrite the same task folders, and artifacts/ can only hold one
+        # run's output per task. Those runs are read from the uploaded zip.
+        if: always() && inputs.commit_artifacts == 'true'
         run: |
           git config user.name "dev-run"
           git config user.email "dev-run@users.noreply.github.com"
