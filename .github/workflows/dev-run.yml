@@ -168,16 +168,28 @@ jobs:
             echo "::error::then add a read token as the repository secret HF_TOKEN."
             exit 1
           fi
-          code=$(curl -sL -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $HF_TOKEN" \
-            https://huggingface.co/datasets/google/physical-engineerings-last-exam/resolve/main/.gitattributes)
-          echo "dataset blob with token: HTTP $code"
+          # Shards start together and each probes the same blob, which is enough
+          # to trip Hugging Face's rate limit: run 45301087428 lost shards 2, 4
+          # and 5 to HTTP 429 while a lone serial job had passed with 200. Only
+          # a 429/5xx is retried; 401 and 403 are answers, not congestion.
+          blob=https://huggingface.co/datasets/google/physical-engineerings-last-exam/resolve/main/.gitattributes
+          code=000
+          for attempt in $(seq 1 8); do
+            code=$(curl -sL -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $HF_TOKEN" "$blob")
+            echo "attempt $attempt: HTTP $code"
+            case "$code" in
+              200) break ;;
+              429|500|502|503|504) sleep $(( attempt * 15 + RANDOM % 10 )) ;;
+              *) break ;;
+            esac
+          done
           case "$code" in
-            200) ;;
+            200) echo "dataset is readable" ;;
             401) echo "::error::The token was rejected. Check that it is a read token for the granted account."; exit 1 ;;
             403) echo "::error::The token is valid but the account has no access to this gated dataset."
                  echo "::error::Open https://huggingface.co/datasets/google/physical-engineerings-last-exam signed in,"
                  echo "::error::click 'Agree and access repository', then re-dispatch."; exit 1 ;;
-            *)   echo "::error::Dataset blob fetch returned HTTP $code."; exit 1 ;;
+            *)   echo "::error::Dataset blob fetch returned HTTP $code after retries."; exit 1 ;;
           esac
 
       - name: Download the shard plan
@@ -192,6 +204,12 @@ jobs:
           TASKS=$(python -c "import json,os;g=json.load(open(os.environ['RUNNER_TEMP']+'/groups.json'));print(','.join(g[${{ matrix.shard }}]))")
           echo "shard ${{ matrix.shard }}: $(echo "$TASKS" | tr ',' '\n' | wc -l) tasks"
           echo "tasks=$TASKS" >> "$GITHUB_OUTPUT"
+
+      - name: Stagger this shard
+        # eval/run.py fetches each task folder from the same gated dataset. Six
+        # shards starting at once look like a burst to Hugging Face, so spread
+        # them out rather than relying on the client's own retries.
+        run: sleep $(( ${{ matrix.shard }} * 30 ))
 
       - name: Run the dev tasks
         working-directory: ${{ runner.temp }}/ple
