@@ -32,9 +32,9 @@ on:
         required: true
         default: "qwen2.5:7b"
       shards:
-        description: "parallel jobs when tasks=all (1-8)"
+        description: "'auto' = one job per task; or a number of grouped jobs"
         required: true
-        default: "6"
+        default: "auto"
       commit_artifacts:
         description: "commit artifacts/ (false: measure only, leave the repo alone)"
         required: true
@@ -66,7 +66,7 @@ jobs:
           python - "${{ inputs.tasks }}" "${{ inputs.shards }}" <<'PY'
           import json, os, sys, yaml
 
-          want, n = sys.argv[1], max(1, min(8, int(sys.argv[2])))
+          want, how = sys.argv[1], sys.argv[2].strip().lower()
           dev = yaml.safe_load(open(os.environ["RUNNER_TEMP"] + "/ple/eval/dev_set.yaml"))
           ids = [t["id"] for t in dev["tasks"]]
           if want.strip() == "all":
@@ -76,10 +76,18 @@ jobs:
               unknown = [x for x in chosen if x not in ids]
               if unknown:
                   sys.exit("unknown dev task id(s): " + ", ".join(unknown))
-              n = 1  # an explicit list is small: keep it in one job
+          # One task per job by default. Grouping was the wrong shape: a task may
+          # legally run for its own 360-minute limit, so ANY grouping lets one
+          # slow task starve the rest of its group past the job cap, which is how
+          # run 45302280975 spent eight hours and uploaded nothing.
+          if how == "auto":
+              n = len(chosen)
+          else:
+              n = max(1, min(64, int(how)))
           # Interleave rather than slice: neighbouring ids in dev_set.yaml are
           # the same discipline and often the same size, so slicing would put
-          # all the slow ones in one shard.
+          # all the slow ones in one shard. With n >= len(chosen) each group
+          # holds exactly one task.
           groups = [chosen[i::n] for i in range(n)]
           groups = [g for g in groups if g]
           print("total tasks: %d -> %d shard(s)" % (len(chosen), len(groups)))
