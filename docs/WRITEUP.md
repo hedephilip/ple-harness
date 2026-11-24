@@ -5,13 +5,9 @@ Details (title, subtitle, card, track), Project Description and Project Links
 before Submit enables.
 
 This version contains **no placeholders**. Where a measurement has not been made,
-the text says so in plain words instead of showing a blank or a guess: the dev
-set has not been run, and `rules.md` requires artifacts to come from
-`eval/run.py` with the declared model, so no dev number can be written here
-without fabricating it.
-
-Three blocks are marked `[REPLACE AFTER DEV RUN]` **outside** the paste text.
-They are the only places that change once the run exists.
+the text says so in plain words instead of showing a blank or a guess: `rules.md`
+requires artifacts to come from `eval/run.py`, so no dev number appears here that
+a committed artifact does not carry.
 
 ---
 
@@ -55,12 +51,14 @@ Paste the block below verbatim, from the `#` heading to the end of §5.
 # Gated Harness: compliance is the floor, not the score
 
 - Repo: https://github.com/hedephilip/ple-harness
-- Commit SHA: `cf2ed68bdc7f2638fe62cbf228e67c1f8afaf277` — the tree where code and scripts were last changed. Commits after it are docs only: `git diff --name-only cf2ed68 HEAD -- '*.py'` is empty.
+- Commit SHA: `cf2ed68bdc7f2638fe62cbf228e67c1f8afaf277` — the tree where the harness code was last changed. Later commits touch CI and docs only: `git diff --name-only cf2ed68 HEAD -- '*.py'` is empty.
 - Primary model_api: google-cloud/claude-opus-5-5
-- Other models: two local stand-ins only — the sponsored gateway is not
-  reachable from this machine, so §3 reports stand-ins, not the declared models
+- Other models: one local stand-in has a measured run (`qwen2.5:1.5b`); the
+  sponsored gateway is not reachable from this machine, so §3 reports stand-ins
+- Judge: rubric and `checks-judge` grading is addressed to `claude-opus-5-5` but
+  answered by that stand-in, because `JUDGE_*` falls back to `MODEL_PROXY_*`
 - Dev run: 1 check-graded task, reward 0.000 on a stand-in. `artifacts/` is
-  committed and §1.1 reports what that run measured, which is behaviour
+  committed and §1.1 reports what that run measured
 
 ## 1. Insight & Failure Analysis (25 pts)
 
@@ -93,13 +91,12 @@ Five findings shaped the build, each from a failure we reproduced:
   let a failure read as a clean success.
 
 - **The model client would have failed every evaluation call.** It attached
-  `temperature` to every request, and `docs/models.md` states that
-  `google-cloud/claude-opus-5-5` returns `400` if `temperature`, `top_p`, `top_k`
-  or a thinking budget is present. The kit's stub accepts any body, so five local
-  checks passed while the entry was unscoreable. The field is now absent unless
-  explicitly set, `max_tokens` defaults to 32000, and Claude requests carry the
-  two cache breakpoints it needs — without them every turn re-processes the whole
-  conversation.
+   `temperature` to every request, and `docs/models.md` states
+   `google-cloud/claude-opus-5-5` returns `400` if `temperature`, `top_p`, `top_k`
+   or a thinking budget is present. The kit's stub accepts any body, so five local
+   checks passed while the entry was unscoreable. The field is now absent unless
+   set, `max_tokens` defaults to 32000, and Claude requests carry the two cache
+   breakpoints they need.
 
 ### 1.1 Failure Breakdown
 
@@ -113,12 +110,11 @@ sponsored gateway is not reachable from this machine) recorded 124 agent steps:
 project folder, opened templates, spent its step budget, and described in prose
 the package it never wrote — reward 0.000, 0 files, 66 s, 4,775/908 tokens.
 
-It is not a model-quality finding. A step budget does not stop a discovery loop,
-only end it: the budget was consumed and the deliverable never existed. Three defects came out of that run and are fixed
-— a read-only streak guard (one reminder after 12 non-writing steps, once per
-round), `MISSING_INPUT` naming the absent claims field instead of
-`GATE_ERROR: KeyError`, and a figure generator that now reads the manifest
-`eval/run.py` actually writes.
+It is not a model-quality finding: a step budget does not stop a discovery loop,
+only end it. Three defects came out of that run and are fixed — a read-only
+streak guard (one reminder after 12 non-writing steps, once per round),
+`MISSING_INPUT` naming the absent claims field instead of `GATE_ERROR: KeyError`,
+and a figure generator that reads the manifest `eval/run.py` actually writes.
 
 The gates themselves are measured on the failure that costs most: a gate firing
 on a valid deliverable. All 13 formula and 6 cross-cutting gates are driven both
@@ -143,9 +139,8 @@ test, and they are the ones that changed behaviour:
 | | discovery scope | `/app`, depth 3 | `/app` + `/filesystem`, mtime-bounded |
 | | protocol requests | 2 | 5 |
 
-Requests are not monotonic here: conditional gates take them 5 → 2, then
-acquisition returns them to 5, because opening a folder costs one read per
-member.
+Requests are not monotonic: conditional gates take them 5 → 2, then acquisition
+returns them to 5, because opening a folder costs one read per member.
 
 **Two things that failed or surprised us.** First, *"a gate that always runs is
 the safe choice."* It is not: a false positive costs more than a missed check,
@@ -208,8 +203,9 @@ Preliminary rather than trusting corpus order.
 ## 3. Cross-Model Generalizability (15 pts)
 
 Not measured on either declared model: the sponsored gateway is not reachable
-from this machine. Two local stand-ins ran behind the kit proxy instead, and the
-gate layer behaved identically on both.
+from this machine. One local stand-in has a measured run behind the kit proxy. A
+second is running the 29-task set and has no result yet, so the table below is
+one model deep and both declared models stay unrun here.
 
 | model_api | Dev result | Tokens in/out | Wall |
 |:-|:-|:-:|:-:|
@@ -219,8 +215,8 @@ gate layer behaved identically on both.
 
 What varies across models is repair efficiency — how many rounds a weaker model
 needs before it acts on a signed failure — which one lesson per round and a round
-budget bound. What does not vary is acquisition, gating and the `final_message`
-rule, because all three operate on files rather than on messages.
+budget bound. Acquisition, gating and the `final_message` rule do not vary,
+because all three operate on files rather than on messages.
 
 ## 4. Efficiency & Scaling (20 pts)
 
@@ -240,14 +236,12 @@ Declaring `google-cloud/claude-opus-5-5` pairs top frontier reasoning (50.6%
 paper baseline) with deterministic gate-enforced compliance ($G=1$), opening the
 $0.6 \cdot G \cdot O'$ scoring term that un-gated entries forfeit.
 
-Cost is bounded in four places rather than by hoping: repairs are round-budgeted
-and a round that reproduces the same hard failures stops the loop instead of
-repeating itself — that is where cost plateaus; exactly one lesson is injected
-per round, so the context does not become a transcript of everything that ever
-failed; `MAX_STEPS_PER_ROUND` caps tool misuse inside a turn; and the read-only
-streak guard cuts the discovery loop that consumed the first run's whole budget
-without producing a file. Token usage is reported per model call through `usage`
-frames, so the cost axis is measured, not estimated.
+Cost is bounded in four places: repairs are round-budgeted, and a round that
+reproduces the same hard failures stops the loop — that is where cost plateaus;
+one lesson per round keeps the context from becoming a transcript; `MAX_STEPS_PER_ROUND`
+caps tool misuse inside a turn; and the read-only streak guard cuts the discovery
+loop that consumed the first run's budget. Token usage is reported per model call
+through `usage` frames, so the cost axis is measured, not estimated.
 
 ## 5. Clarity & Visuals (15 pts)
 
@@ -263,13 +257,10 @@ python tests/test_fidelity.py                  # per-gate matrix: valid case vs 
 python tests/e2e_local.py                      # gate reject → repair → pass over a real WebSocket
 ```
 
-`kit check` passes seven of its eight stages: `submission.yaml`, `files`, `build`,
+`kit check` passes seven of eight stages: `submission.yaml`, `files`, `build`,
 `model`, `listen`, `smoke` and `mcp`, the last exercising the app-server path end
 to end (9 requests, 192 in / 24 out tokens). The eighth, `artifacts`, is what the
 dev run in §1.1 files.
-
-The declared Stage 2 model is `google-cloud/claude-opus-5-5`; no run here used
-it, so §3 reports stand-ins, not that model.
 
 Reference: R. Han et al., *PLE: Physical-Engineering's Last Exam*,
 arXiv:2610.30537, 2026.

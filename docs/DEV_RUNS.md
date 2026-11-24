@@ -3,7 +3,7 @@
 Every number here comes from a committed artifact or a workflow log, and each
 run names the commit that produced it. Nothing in this file is estimated.
 
-The declared model for Stage 2 is `google-cloud/llama-4-maverick`. No run below
+The declared model for Stage 2 is `google-cloud/claude-opus-5-5`. No run below
 uses it: this machine has no access to the Google-hosted gateway, so the runs
 substitute a local Ollama model behind the kit's sanctioned LiteLLM proxy. The
 proxy is reached exactly as `docs/models.md` prescribes — `MODEL_PROXY_URL`
